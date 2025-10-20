@@ -17,10 +17,11 @@ export type ExerciseType =
 // ====================================
 
 export interface School {
-  group_no: string; // 4자리 숫자 문자열 (PK)
+  id: string;
+  group_no: string; // 4자리 숫자 문자열 (도메인 PK), 실제 DB PK는 id(uuid)
   name: string;
   school_type: SchoolType;
-  device_ids?: string[]; // uuid[] -> string[] 로 매핑
+  device_ids?: string[]; // 레거시 환경 호환용 (존재하지 않을 수 있음)
   recognition_key: string;
   created_at: string;
 }
@@ -33,7 +34,7 @@ export interface Device {
 
 export interface DeviceManagement {
   id: string;
-  group_no: string; // schools.group_no FK
+  school_id: string; // schools.id FK
   device_id: string; // devices.id FK
   start_date?: string | null; // YYYY-MM-DD
   end_date?: string | null;
@@ -329,14 +330,14 @@ export interface Database {
       device_management: {
         Row: DeviceManagement;
         Insert: {
-          group_no: string;
+          school_id: string;
           device_id: string;
           start_date?: string | null;
           end_date?: string | null;
           limited_period?: boolean; // DB default false
         };
         Update: Partial<{
-          group_no: string;
+          school_id: string;
           device_id: string;
           start_date?: string | null;
           end_date?: string | null;

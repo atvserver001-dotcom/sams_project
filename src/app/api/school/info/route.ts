@@ -17,8 +17,8 @@ async function getOperatorFromRequest(request: NextRequest) {
 
   try {
     const decoded = jwt.verify(accessToken, jwtSecret) as any
-    const { data: account, error } = await supabaseAdmin
-      .from('operator_accounts')
+    const { data: account, error } = await (supabaseAdmin
+      .from('operator_accounts') as any)
       .select('id, role, school_id, is_active')
       .eq('id', decoded.sub)
       .maybeSingle()
@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
     .from('schools')
     .select('id, name, group_no, school_type')
     .eq('id', schoolId)
-    .maybeSingle()
+    .maybeSingle<Pick<import('@/types/database.types').Database['public']['Tables']['schools']['Row'], 'id' | 'name' | 'group_no' | 'school_type'>>()
 
   if (error || !data) {
     return NextResponse.json({ error: error?.message || '학교 정보를 찾을 수 없습니다.' }, { status: 404 })

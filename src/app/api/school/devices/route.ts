@@ -13,8 +13,8 @@ async function getOperatorWithSchool(request: NextRequest) {
 
   try {
     const decoded = jwt.verify(accessToken, jwtSecret) as any
-    const { data: account, error } = await supabaseAdmin
-      .from('operator_accounts')
+    const { data: account, error } = await (supabaseAdmin
+      .from('operator_accounts') as any)
       .select('id, role, school_id, is_active')
       .eq('id', decoded.sub)
       .maybeSingle()
@@ -44,8 +44,8 @@ export async function GET(request: NextRequest) {
 
   const schoolId = auth.schoolId as string
 
-  const { data: mgmt, error: mgmtErr } = await supabaseAdmin
-    .from('device_management')
+  const { data: mgmt, error: mgmtErr } = await (supabaseAdmin
+    .from('device_management') as any)
     .select('device_id, start_date, end_date, limited_period, created_at')
     .eq('school_id', schoolId)
     .order('created_at', { ascending: true })

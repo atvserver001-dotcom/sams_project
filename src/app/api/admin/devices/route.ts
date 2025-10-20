@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import jwt from 'jsonwebtoken'
 import { supabaseAdmin } from '@/lib/supabase'
+import type { Database } from '@/types/database.types'
 
 function requireAdmin(req: NextRequest) {
   const token = req.cookies.get('op-access-token')?.value
@@ -65,8 +66,8 @@ export async function PUT(req: NextRequest) {
   // 순차 업데이트 (작은 배열 기준). 대규모면 RPC/UPSERT로 최적화 고려
   for (let i = 0; i < order.length; i++) {
     const id = order[i]
-    const { error: updErr } = await supabaseAdmin
-      .from('devices')
+    const { error: updErr } = await (supabaseAdmin
+      .from('devices') as any)
       .update({ sort_order: i })
       .eq('id', id)
     if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })

@@ -133,11 +133,11 @@ export async function POST(request: NextRequest) {
     updated_at: new Date().toISOString(),
   } as any
 
-  const { data, error } = await supabaseAdmin
-    .from('students')
+  const { data, error } = await (supabaseAdmin
+    .from('students') as any)
     .insert(insertPayload)
     .select('*')
-    .single<Database['public']['Tables']['students']['Row']>()
+    .single()
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 400 })

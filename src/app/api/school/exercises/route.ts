@@ -21,21 +21,17 @@ type StudentRow = {
   name: string
 }
 
-type ExerciseRecordRow = {
+type ExerciseMonthlyRow = {
   student_id: string
-  record_type: 1 | 2 | 3
-  m01: number | null
-  m02: number | null
-  m03: number | null
-  m04: number | null
-  m05: number | null
-  m06: number | null
-  m07: number | null
-  m08: number | null
-  m09: number | null
-  m10: number | null
-  m11: number | null
-  m12: number | null
+  exercise_type: 'endurance' | 'flexibility' | 'strength'
+  year: number
+  month: number
+  avg_duration_seconds: number | null
+  avg_accuracy: number | null
+  avg_bpm: number | null
+  avg_max_bpm: number | null
+  avg_calories: number | null
+  record_count: number
 }
 
 async function getOperatorFromRequest(request: NextRequest): Promise<AuthResult> {
@@ -90,6 +86,11 @@ type ExerciseRow = {
   minutes: (number | null)[]
   avg_bpm: (number | null)[]
   max_bpm: (number | null)[]
+  accuracy: (number | null)[]
+  calories: (number | null)[]
+  minutes_c1: (number | null)[]
+  minutes_c2: (number | null)[]
+  minutes_c3: (number | null)[]
 }
 
 export async function GET(request: NextRequest) {
@@ -146,19 +147,33 @@ export async function GET(request: NextRequest) {
 
   const baseQuery = supabaseAdmin
     .from('exercise_records')
-    .select('*')
+    .select('student_id, exercise_type, year, month, avg_duration_seconds, avg_accuracy, avg_bpm, avg_max_bpm, avg_calories, record_count')
     .in('student_id', studentIds)
     .eq('year', year)
 
-  const query = category_type === 'all'
-    ? baseQuery.in('category_type', [1, 2, 3])
-    : baseQuery.eq('category_type', category_type)
-
-  const { data: records, error: recordsError } = await query.returns<ExerciseRecordRow[]>()
-
-  if (recordsError) {
-    return NextResponse.json({ error: recordsError.message }, { status: 500 })
+  const typeMap: Record<1 | 2 | 3 | 4, 'strength' | 'endurance' | 'flexibility'> = {
+    1: 'strength',
+    2: 'endurance',
+    3: 'flexibility',
+    4: 'strength', // 미사용 보호
   }
+
+  const query = category_type === 'all'
+    ? baseQuery.in('exercise_type', ['strength', 'endurance', 'flexibility'])
+    : Number.isFinite(category_type as any)
+      ? baseQuery.eq('exercise_type', typeMap[category_type as 1 | 2 | 3 | 4])
+      : baseQuery
+
+  let records: ExerciseMonthlyRow[] = []
+  {
+    const { data: recs, error: recordsError } = await query.returns<ExerciseMonthlyRow[]>()
+    if (recordsError) {
+      return NextResponse.json({ error: recordsError.message }, { status: 500 })
+    }
+    records = recs ?? []
+  }
+
+  // 칼로리는 쿼리된 category_type 범위 내(record_type=5) 값만 합산하여 사용합니다.
 
   const studentIdToRow: Record<string, ExerciseRow> = {}
   for (const s of students ?? []) {
@@ -169,10 +184,15 @@ export async function GET(request: NextRequest) {
       minutes: Array.from({ length: 12 }, () => null),
       avg_bpm: Array.from({ length: 12 }, () => null),
       max_bpm: Array.from({ length: 12 }, () => null),
+      accuracy: Array.from({ length: 12 }, () => null),
+      calories: Array.from({ length: 12 }, () => null),
+      minutes_c1: Array.from({ length: 12 }, () => null),
+      minutes_c2: Array.from({ length: 12 }, () => null),
+      minutes_c3: Array.from({ length: 12 }, () => null),
     }
   }
 
-  // 평균 계산을 위한 누적 버퍼
+  // 평균 계산을 위한 가중 누적 버퍼(record_count 기준)
   const avgSumMap: Record<string, number[]> = {}
   const avgCntMap: Record<string, number[]> = {}
   const ensureAvgBuffers = (studentId: string) => {
@@ -180,41 +200,68 @@ export async function GET(request: NextRequest) {
     if (!avgCntMap[studentId]) avgCntMap[studentId] = Array.from({ length: 12 }, () => 0)
   }
 
+  // 정확도(%) 평균 계산을 위한 가중 누적 버퍼(record_count 기준)
+  const accSumMap: Record<string, number[]> = {}
+  const accCntMap: Record<string, number[]> = {}
+  const ensureAccBuffers = (studentId: string) => {
+    if (!accSumMap[studentId]) accSumMap[studentId] = Array.from({ length: 12 }, () => 0)
+    if (!accCntMap[studentId]) accCntMap[studentId] = Array.from({ length: 12 }, () => 0)
+  }
+
   for (const r of records ?? []) {
     const row = studentIdToRow[r.student_id]
     if (!row) continue
-    const values = [
-      r.m01, r.m02, r.m03, r.m04, r.m05, r.m06,
-      r.m07, r.m08, r.m09, r.m10, r.m11, r.m12,
-    ].map((v: any) => (typeof v === 'number' ? v : v == null ? null : Number(v)))
+    const idx = Math.max(0, Math.min(11, (r.month ?? 1) - 1))
 
-    // 규약 변경: record_type 1=운동시간(분, 합계), 2=평균 심박(평균), 3=최대 심박(최댓값)
-    if (r.record_type === 1) {
-      for (let i = 0; i < 12; i++) {
-        const current = row.minutes[i]
-        const incoming = values[i]
-        row.minutes[i] = current == null && incoming == null ? null : (current ?? 0) + (incoming ?? 0)
-      }
-    } else if (r.record_type === 2) {
+    const count = typeof r.record_count === 'number' ? r.record_count : 0
+    const durationMinutes = typeof r.avg_duration_seconds === 'number' && count > 0
+      ? (r.avg_duration_seconds * count) / 60
+      : null
+    const caloriesTotal = typeof r.avg_calories === 'number' && count > 0
+      ? r.avg_calories * count
+      : null
+
+    // 전체 minutes 합산
+    if (durationMinutes != null) {
+      const cur = row.minutes[idx]
+      row.minutes[idx] = cur == null ? durationMinutes : cur + durationMinutes
+    }
+
+    // 카테고리별 스택: 1=strength, 2=endurance, 3=flexibility
+    const target = r.exercise_type === 'strength' ? row.minutes_c1 : r.exercise_type === 'endurance' ? row.minutes_c2 : row.minutes_c3
+    if (durationMinutes != null) {
+      const curC = target[idx]
+      target[idx] = curC == null ? durationMinutes : curC + durationMinutes
+    }
+
+    // 평균 bpm 가중 누적
+    if (typeof r.avg_bpm === 'number' && count > 0) {
       ensureAvgBuffers(r.student_id)
-      for (let i = 0; i < 12; i++) {
-        const v = values[i]
-        if (typeof v === 'number') {
-          avgSumMap[r.student_id][i] += v
-          avgCntMap[r.student_id][i] += 1
-        }
-      }
-    } else if (r.record_type === 3) {
-      for (let i = 0; i < 12; i++) {
-        const current = row.max_bpm[i]
-        const incoming = values[i]
-        if (incoming == null) continue
-        row.max_bpm[i] = current == null ? incoming : Math.max(current, incoming)
-      }
+      avgSumMap[r.student_id][idx] += r.avg_bpm * count
+      avgCntMap[r.student_id][idx] += count
+    }
+
+    // 최대 bpm 은 최대값 유지
+    if (typeof r.avg_max_bpm === 'number') {
+      const curMax = row.max_bpm[idx]
+      row.max_bpm[idx] = curMax == null ? r.avg_max_bpm : Math.max(curMax, r.avg_max_bpm)
+    }
+
+    // 정확도 평균 가중 누적
+    if (typeof r.avg_accuracy === 'number' && count > 0) {
+      ensureAccBuffers(r.student_id)
+      accSumMap[r.student_id][idx] += r.avg_accuracy * count
+      accCntMap[r.student_id][idx] += count
+    }
+
+    // 칼로리 합계
+    if (caloriesTotal != null) {
+      const curCal = row.calories[idx]
+      row.calories[idx] = curCal == null ? caloriesTotal : curCal + caloriesTotal
     }
   }
 
-  // 평균 심박 산출
+  // 평균 심박 산출 (가중 평균)
   for (const [studentId, row] of Object.entries(studentIdToRow)) {
     const sumArr = avgSumMap[studentId]
     const cntArr = avgCntMap[studentId]
@@ -222,6 +269,17 @@ export async function GET(request: NextRequest) {
     for (let i = 0; i < 12; i++) {
       const c = cntArr[i]
       row.avg_bpm[i] = c > 0 ? Math.round((sumArr[i] / c) * 10) / 10 : row.avg_bpm[i]
+    }
+  }
+
+  // 정확도 평균 산출 (% 값으로 가정, 가중 평균)
+  for (const [studentId, row] of Object.entries(studentIdToRow)) {
+    const sumArr = accSumMap[studentId]
+    const cntArr = accCntMap[studentId]
+    if (!sumArr || !cntArr) continue
+    for (let i = 0; i < 12; i++) {
+      const c = cntArr[i]
+      row.accuracy[i] = c > 0 ? Math.round((sumArr[i] / c) * 10) / 10 : row.accuracy[i]
     }
   }
 

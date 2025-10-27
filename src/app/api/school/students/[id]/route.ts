@@ -80,7 +80,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     .single()
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 400 })
+    const message = (error as any)?.message || ''
+    const code = (error as any)?.code || ''
+    if (code === '23505' || message.includes('duplicate key value violates unique constraint')) {
+      return NextResponse.json({ error: '해당 번호에 존재하는 학생데이터가 있습니다.' }, { status: 409 })
+    }
+    return NextResponse.json({ error: message || '요청 처리 중 오류가 발생했습니다.' }, { status: 400 })
   }
 
   return NextResponse.json({ student: data })
@@ -95,6 +100,17 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
   const schoolId = auth.account.school_id as string
   const { id } = await params
 
+  // 먼저 의존 테이블(exercise_records)에서 해당 학생 데이터 삭제
+  const { error: exrecError } = await supabaseAdmin
+    .from('exercise_records')
+    .delete()
+    .eq('student_id', id)
+
+  if (exrecError) {
+    return NextResponse.json({ error: exrecError.message }, { status: 400 })
+  }
+
+  // 종속 데이터 삭제 후 학생 삭제 시도
   const { error } = await supabaseAdmin
     .from('students')
     .delete()

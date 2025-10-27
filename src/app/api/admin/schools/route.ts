@@ -36,7 +36,10 @@ export async function GET(req: NextRequest) {
   const schoolRows = (data ?? []) as SchoolListRow[]
   const schoolIds = schoolRows.map(s => s.id)
   // 학교별로 모든 디바이스 이름과 각각의 기간을 수집
-  const deviceMap = new Map<string, Array<{ device_name: string; period: string }>>() // key: school_id
+  const deviceMap = new Map<string, Array<{ device_name: string; period: string }>>() // key: school_id (정렬 완료본)
+  const deviceEntriesMap = new Map<string, Array<{ device_id: string; device_name: string; period: string }>>() // 정렬 전 원본(정렬용)
+  // 학교별 제한기간 디바이스의 최소 종료일 수집
+  const minEndDateMap = new Map<string, string | null>()
   if (schoolIds.length > 0) {
     const { data: mgmt } = await supabaseAdmin
       .from('device_management')
@@ -49,26 +52,53 @@ export async function GET(req: NextRequest) {
       const deviceIds = Array.from(new Set(mgmtRows.map((m) => m.device_id)))
       const { data: deviceRows } = await supabaseAdmin
         .from('devices')
-        .select('id, device_name')
+        .select('id, device_name, sort_order')
         .in('id', deviceIds)
 
       const idToName = new Map<string, string>()
+      const idToOrder = new Map<string, number | null | undefined>()
       if (deviceRows) {
-        const deviceRowsList = deviceRows as Array<{ id: string; device_name: string }>
-        for (const r of deviceRowsList) idToName.set(r.id as string, r.device_name as string)
+        const deviceRowsList = deviceRows as Array<{ id: string; device_name: string; sort_order?: number | null }>
+        for (const r of deviceRowsList) {
+          idToName.set(r.id as string, r.device_name as string)
+          idToOrder.set(r.id as string, r.sort_order)
+        }
       }
 
       for (const m of mgmtRows) {
-        const list = deviceMap.get(m.school_id) || []
+        const list = deviceEntriesMap.get(m.school_id) || []
         const deviceName = idToName.get(m.device_id) || '-'
         const period = m.limited_period && m.start_date && m.end_date
           ? `${m.start_date} ~ ${m.end_date}`
           : '제한없음'
-        // 동일 디바이스 이름 중복 방지 (같은 학교 내 동일 디바이스가 여러 레코드일 때)
-        if (!list.some((x) => x.device_name === deviceName && x.period === period)) {
-          list.push({ device_name: deviceName, period })
+        // 동일 디바이스 중복 방지 (같은 학교 내 동일 디바이스/기간 중복 제거)
+        if (!list.some((x) => x.device_id === m.device_id && x.period === period)) {
+          list.push({ device_id: m.device_id, device_name: deviceName, period })
         }
-        deviceMap.set(m.school_id, list)
+        deviceEntriesMap.set(m.school_id, list)
+
+        // 최소 종료일 기록
+        if (m.limited_period && m.end_date) {
+          const prev = minEndDateMap.get(m.school_id)
+          if (!prev || m.end_date < prev) {
+            minEndDateMap.set(m.school_id, m.end_date)
+          }
+        }
+      }
+
+      // 학교별로 devices.sort_order 기준으로 정렬하여 deviceMap에 최종 저장
+      for (const schoolId of schoolIds) {
+        const entries = deviceEntriesMap.get(schoolId) || []
+        if (entries.length === 0) continue
+        const sorted = [...entries].sort((a, b) => {
+          const ao = idToOrder.get(a.device_id)
+          const bo = idToOrder.get(b.device_id)
+          const av = ao === null || ao === undefined ? Number.POSITIVE_INFINITY : (ao as number)
+          const bv = bo === null || bo === undefined ? Number.POSITIVE_INFINITY : (bo as number)
+          if (av !== bv) return av - bv
+          return a.device_name.localeCompare(b.device_name)
+        })
+        deviceMap.set(schoolId, sorted.map(x => ({ device_name: x.device_name, period: x.period })))
       }
     }
   }
@@ -92,24 +122,36 @@ export async function GET(req: NextRequest) {
         const allLegacyIds = Array.from(legacyIdSet)
         const { data: legacyDevices } = await supabaseAdmin
           .from('devices')
-          .select('id, device_name')
+          .select('id, device_name, sort_order')
           .in('id', allLegacyIds)
         if (legacyDevices) {
           const idToName = new Map<string, string>()
-          for (const r of legacyDevices as Array<{ id: string; device_name: string }>) {
+          const idToOrder = new Map<string, number | null | undefined>()
+          for (const r of legacyDevices as Array<{ id: string; device_name: string; sort_order?: number | null }>) {
             idToName.set(r.id, r.device_name)
+            idToOrder.set(r.id, r.sort_order)
           }
           for (const s of schoolRows) {
             if (!schoolNeedingFallback.includes(s.id)) continue
             const legacy = ((s as any).device_ids as string[]) || []
-            const list: Array<{ device_name: string; period: string }> = []
+            const list: Array<{ device_id: string; device_name: string; period: string }> = []
             for (const did of legacy) {
               const name = idToName.get(did) || '-'
-              if (!list.some(x => x.device_name === name)) {
-                list.push({ device_name: name, period: '제한없음' })
+              if (!list.some(x => x.device_id === did)) {
+                list.push({ device_id: did, device_name: name, period: '제한없음' })
               }
             }
-            if (list.length) deviceMap.set(s.id, list)
+            if (list.length) {
+              const sorted = list.sort((a, b) => {
+                const ao = idToOrder.get(a.device_id)
+                const bo = idToOrder.get(b.device_id)
+                const av = ao === null || ao === undefined ? Number.POSITIVE_INFINITY : (ao as number)
+                const bv = bo === null || bo === undefined ? Number.POSITIVE_INFINITY : (bo as number)
+                if (av !== bv) return av - bv
+                return a.device_name.localeCompare(b.device_name)
+              })
+              deviceMap.set(s.id, sorted.map(x => ({ device_name: x.device_name, period: x.period })))
+            }
           }
         }
       }
@@ -125,6 +167,7 @@ export async function GET(req: NextRequest) {
       school_type: (s as any).school_type,
       recognition_key: (s as any).recognition_key,
       devices,
+      min_end_date: minEndDateMap.get(s.id) || null,
     }
   })
 
@@ -203,5 +246,6 @@ export async function POST(req: NextRequest) {
   }
   return NextResponse.json({ success: true }, { status: 201 })
 }
+
 
 

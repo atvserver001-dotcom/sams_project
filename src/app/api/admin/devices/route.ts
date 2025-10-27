@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await supabaseAdmin
     .from('devices')
-    .select('id, device_name, sort_order')
+    .select('id, device_name, sort_order, page')
     .order('sort_order', { ascending: true, nullsFirst: true })
     .order('device_name', { ascending: true })
 
@@ -39,15 +39,15 @@ export async function POST(req: NextRequest) {
   if ('error' in auth) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
   const body = await req.json()
-  const { device_name } = body as { device_name?: string }
+  const { device_name, page } = body as { device_name?: string; page?: boolean }
   if (!device_name || !device_name.trim()) {
     return NextResponse.json({ error: 'device_name은 필수입니다.' }, { status: 400 })
   }
 
   const { data, error } = await (supabaseAdmin
     .from('devices') as any)
-    .insert({ device_name: device_name.trim() })
-    .select('id, device_name, sort_order')
+    .insert({ device_name: device_name.trim(), page: !!page })
+    .select('id, device_name, sort_order, page')
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

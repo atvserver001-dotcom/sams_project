@@ -29,6 +29,11 @@ interface ExerciseRow {
   minutes: (number | null)[]
   avg_bpm: (number | null)[]
   max_bpm: (number | null)[]
+  accuracy?: (number | null)[]
+  calories?: (number | null)[]
+  minutes_c1?: (number | null)[]
+  minutes_c2?: (number | null)[]
+  minutes_c3?: (number | null)[]
 }
 
 export default function ExercisesPage() {
@@ -40,11 +45,15 @@ export default function ExercisesPage() {
 
   const [students, setStudents] = useState<StudentRow[]>([])
   const [rows, setRows] = useState<ExerciseRow[]>([])
-  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const [view, setView] = useState<ViewMode>('data')
   const [tooltip, setTooltip] = useState<{ x: number; y: number; content: string } | null>(null)
+
+  const onChangeYear = (v: number) => { setYear(v) }
+  const onChangeGrade = (v: number) => { setGrade(v) }
+  const onChangeClassNo = (v: number) => { setClassNo(v) }
+  const onChangeCategory = (v: CategoryFilter) => { setCategory(v) }
 
   useEffect(() => {
     const loadSchool = async () => {
@@ -69,7 +78,6 @@ export default function ExercisesPage() {
 
   const fetchStudents = async () => {
     try {
-      setLoading(true)
       setError(null)
       const res = await fetch(`/api/school/students?grade=${grade}&class_no=${classNo}`)
       const data = await res.json()
@@ -78,7 +86,7 @@ export default function ExercisesPage() {
     } catch (e: any) {
       setError(e.message)
     } finally {
-      setLoading(false)
+      
     }
   }
 
@@ -89,8 +97,8 @@ export default function ExercisesPage() {
 
   const fetchExercises = async (yearValue: number, studs: StudentRow[]) => {
     try {
-      setLoading(true)
       setError(null)
+      setTooltip(null)
       const ctParam = category === 'all' ? 'all' : String(category)
       const res = await fetch(`/api/school/exercises?grade=${grade}&class_no=${classNo}&year=${yearValue}&category_type=${ctParam}`)
       const data = await res.json()
@@ -110,11 +118,16 @@ export default function ExercisesPage() {
           minutes: [...empty12],
           avg_bpm: [...empty12],
           max_bpm: [...empty12],
+          accuracy: [...empty12],
+          calories: [...empty12],
+          minutes_c1: [...empty12],
+          minutes_c2: [...empty12],
+          minutes_c3: [...empty12],
         }))
       setRows(mapped)
       setError(e.message)
     } finally {
-      setLoading(false)
+      
     }
   }
 
@@ -127,12 +140,29 @@ export default function ExercisesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [students, year, category])
 
-  const months = useMemo(() => Array.from({ length: 12 }, (_, i) => `${i + 1}월`), [])
+  const monthOrderIdx = useMemo(() => [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 0, 1], [])
+  const months = useMemo(() => monthOrderIdx.map((idx) => `${idx + 1}월`), [monthOrderIdx])
+  const monthCellPx = 56 // 표 월별 셀 고정 폭(px)
+  const contentKey = useMemo(() => `${year}-${grade}-${classNo}-${String(category)}`, [year, grade, classNo, category])
+
+  
+
+  // 칼로리는 서버 record_type=5 값을 그대로 사용
 
   const minutesMax = useMemo(() => {
     const vals: number[] = []
     for (const r of rows) {
       for (const v of r.minutes) if (typeof v === 'number') vals.push(v)
+    }
+    const max = vals.length ? Math.max(...vals) : 0
+    return max || 1
+  }, [rows])
+
+  const caloriesMax = useMemo(() => {
+    const vals: number[] = []
+    for (const r of rows) {
+      const calArr = r?.calories ?? Array.from({ length: 12 }, () => null as number | null)
+      for (const v of calArr) if (typeof v === 'number') vals.push(v)
     }
     const max = vals.length ? Math.max(...vals) : 0
     return max || 1
@@ -162,7 +192,7 @@ export default function ExercisesPage() {
             <label className="block text-xs font-semibold text-indigo-700 mb-1">년도</label>
             <select
               value={year}
-              onChange={(e) => setYear(Number(e.target.value))}
+              onChange={(e) => onChangeYear(Number(e.target.value))}
               className="block w-36 h-12 px-4 rounded-lg border-2 border-indigo-300 bg-white shadow text-lg font-semibold text-center text-gray-900 focus:outline-none outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300 hover:border-indigo-300 active:border-indigo-300"
             >
               {Array.from({ length: 5 }).map((_, i) => {
@@ -176,7 +206,7 @@ export default function ExercisesPage() {
             <label className="block text-xs font-semibold text-indigo-700 mb-1">학년</label>
             <select
               value={grade}
-              onChange={(e) => setGrade(Number(e.target.value))}
+              onChange={(e) => onChangeGrade(Number(e.target.value))}
               className="block w-36 h-12 px-4 rounded-lg border-2 border-indigo-300 bg-white shadow text-lg font-semibold text-center text-gray-900 focus:outline-none outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300 hover:border-indigo-300 active:border-indigo-300"
             >
               {Array.from({ length: schoolType === 1 ? 6 : 3 }).map((_, i) => (
@@ -189,7 +219,7 @@ export default function ExercisesPage() {
             <label className="block text-xs font-semibold text-indigo-700 mb-1">반</label>
             <select
               value={classNo}
-              onChange={(e) => setClassNo(Number(e.target.value))}
+              onChange={(e) => onChangeClassNo(Number(e.target.value))}
               className="block w-36 h-12 px-4 rounded-lg border-2 border-indigo-300 bg-white shadow text-lg font-semibold text-center text-gray-900 focus:outline-none outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300 hover:border-indigo-300 active:border-indigo-300"
             >
               {Array.from({ length: 10 }).map((_, i) => (
@@ -205,25 +235,25 @@ export default function ExercisesPage() {
         {/* 운동종류 카테고리 */}
         <div className="inline-flex rounded-full overflow-hidden border border-white/70 shadow">
           <button
-            onClick={() => setCategory('all')}
+            onClick={() => onChangeCategory('all')}
             className={`px-4 py-2 text-sm font-semibold transition ${category === 'all' ? 'bg-amber-500 text-white' : 'bg-white text-gray-900 hover:bg-gray-50'}`}
           >
             전체
           </button>
           <button
-            onClick={() => setCategory(1)}
+            onClick={() => onChangeCategory(1)}
             className={`px-4 py-2 text-sm font-semibold transition ${category === 1 ? 'bg-amber-500 text-white' : 'bg-white text-gray-900 hover:bg-gray-50'}`}
           >
             근력.근지구력운동
           </button>
           <button
-            onClick={() => setCategory(2)}
+            onClick={() => onChangeCategory(2)}
             className={`px-4 py-2 text-sm font-semibold transition ${category === 2 ? 'bg-amber-500 text-white' : 'bg-white text-gray-900 hover:bg-gray-50'}`}
           >
             심폐지구력운동
           </button>
           <button
-            onClick={() => setCategory(3)}
+            onClick={() => onChangeCategory(3)}
             className={`px-4 py-2 text-sm font-semibold transition ${category === 3 ? 'bg-amber-500 text-white' : 'bg-white text-gray-900 hover:bg-gray-50'}`}
           >
             유연성운동
@@ -259,7 +289,13 @@ export default function ExercisesPage() {
                   <th className="px-3 py-2 w-32 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">이름</th>
                   <th className="px-2 py-2 w-20 text-center text-xs font-medium text-gray-500 uppercase tracking-wider"></th>
                   {months.map((m) => (
-                    <th key={m} className="px-2 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{m}</th>
+                    <th
+                      key={m}
+                      className="px-2 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider"
+                      style={{ width: monthCellPx }}
+                    >
+                      {m}
+                    </th>
                   ))}
                 </tr>
               </thead>
@@ -270,28 +306,52 @@ export default function ExercisesPage() {
                   const r = rows.find(rr => rr.student_no === num) || null
 
                   const minutes = r?.minutes ?? Array.from({ length: 12 }, () => null as number | null)
+                  const accArr = r?.accuracy ?? Array.from({ length: 12 }, () => null as number | null)
+                  const extraRows = 1 /* accuracy */ + 1 /* calories */
+                  const mergedRowSpan = 3 + extraRows
 
                   return (
                     <React.Fragment key={num}>
                       <tr className=" bg-gray-50">
-                        <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 align-middle text-center" rowSpan={3}>{num}</td>
-                        <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 align-middle text-center" rowSpan={3}>{s ? s.name : '-'}</td>
+                        <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 align-middle text-center" rowSpan={mergedRowSpan}>{num}</td>
+                        <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 align-middle text-center" rowSpan={mergedRowSpan}>{s ? s.name : '-'}</td>
                         <td className="px-2 py-2 whitespace-nowrap text-xs text-center text-indigo-700 font-semibold">운동시간</td>
-                        {minutes.map((v: number | null, i: number) => (
-                          <td key={i} className="px-2 py-2 whitespace-nowrap text-sm text-center text-gray-900">{v ?? '-'}</td>
-                        ))}
+                        {monthOrderIdx.map((origIdx, i) => {
+                          const v = minutes[origIdx] as number | null
+                          return <td key={i} className="px-2 py-2 whitespace-nowrap text-sm text-center text-gray-900" style={{ width: monthCellPx }}>{v ?? '-'}</td>
+                        })}
+                      </tr>
+                      <tr className="  bg-teal-50">
+                        <td className="px-2 py-2 whitespace-nowrap text-xs text-center text-teal-700 font-semibold">정확도</td>
+                        {monthOrderIdx.map((origIdx, i) => {
+                          const v = accArr[origIdx] as number | null
+                          return <td key={i} className="px-2 py-2 whitespace-nowrap text-xs text-center text-gray-500" style={{ width: monthCellPx }}>{v ?? '-'}</td>
+                        })}
                       </tr>
                       <tr className="  bg-violet-50">
                         <td className="px-2 py-2 whitespace-nowrap text-xs text-center text-violet-700 font-semibold">평균 bpm</td>
-                        {(r?.avg_bpm ?? Array.from({ length: 12 }, () => null as number | null)).map((v: number | null, i: number) => (
-                          <td key={i} className="px-2 py-2 whitespace-nowrap text-xs text-center text-gray-500">{v ?? '-'}</td>
-                        ))}
+                        {monthOrderIdx.map((origIdx, i) => {
+                          const v = (r?.avg_bpm ?? Array.from({ length: 12 }, () => null as number | null))[origIdx] as number | null
+                          return <td key={i} className="px-2 py-2 whitespace-nowrap text-xs text-center text-gray-500" style={{ width: monthCellPx }}>{v ?? '-'}</td>
+                        })}
                       </tr>
                       <tr className="  bg-rose-50">
                         <td className="px-2 py-2 whitespace-nowrap text-xs text-center text-rose-700 font-semibold">최대 bpm</td>
-                        {(r?.max_bpm ?? Array.from({ length: 12 }, () => null as number | null)).map((v: number | null, i: number) => (
-                          <td key={i} className="px-2 py-2 whitespace-nowrap text-xs text-center text-gray-500">{v ?? '-'}</td>
-                        ))}
+                        {monthOrderIdx.map((origIdx, i) => {
+                          const v = (r?.max_bpm ?? Array.from({ length: 12 }, () => null as number | null))[origIdx] as number | null
+                          return <td key={i} className="px-2 py-2 whitespace-nowrap text-xs text-center text-gray-500" style={{ width: monthCellPx }}>{v ?? '-'}</td>
+                        })}
+                      </tr>
+                      <tr className="  bg-yellow-50">
+                        <td className="px-2 py-2 whitespace-nowrap text-xs text-center text-yellow-700 font-semibold">칼로리</td>
+                        {(() => {
+                          const calArr = r?.calories ?? Array.from({ length: 12 }, () => null as number | null)
+                          return monthOrderIdx.map((origIdx, i) => {
+                            const v = calArr[origIdx] as number | null
+                            const display = typeof v === 'number' ? v.toFixed(1) : '-'
+                            return <td key={i} className="px-2 py-2 whitespace-nowrap text-xs text-center text-gray-500" style={{ width: monthCellPx }}>{display}</td>
+                          })
+                        })()}
                       </tr>
                     </React.Fragment>
                   )
@@ -300,7 +360,7 @@ export default function ExercisesPage() {
             </table>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4">
+          <div className="grid grid-cols-1 gap-4" key={contentKey}>
             {Array.from({ length: 30 }).map((_, idx) => {
               const num = idx + 1
               const s = students.find(st => st.student_no === num) || null
@@ -308,9 +368,24 @@ export default function ExercisesPage() {
               const minutesDataRaw = r?.minutes ?? Array.from({ length: 12 }, () => null as number | null)
               const avgDataRaw = r?.avg_bpm ?? Array.from({ length: 12 }, () => null as number | null)
               const maxDataRaw = r?.max_bpm ?? Array.from({ length: 12 }, () => null as number | null)
-              const minutesData = minutesDataRaw.map((v: number | null) => (typeof v === 'number' ? v : 0))
-              const avgData = avgDataRaw.map((v: number | null) => (typeof v === 'number' ? v : 0))
-              const maxData = maxDataRaw.map((v: number | null) => (typeof v === 'number' ? v : 0))
+              const calDataRaw = r?.calories ?? Array.from({ length: 12 }, () => null as number | null)
+              const mC1Raw = r?.minutes_c1 ?? Array.from({ length: 12 }, () => null as number | null)
+              const mC2Raw = r?.minutes_c2 ?? Array.from({ length: 12 }, () => null as number | null)
+              const mC3Raw = r?.minutes_c3 ?? Array.from({ length: 12 }, () => null as number | null)
+              const minutesDataRawOrdered = monthOrderIdx.map((idx) => minutesDataRaw[idx] as number | null)
+              const avgDataRawOrdered = monthOrderIdx.map((idx) => avgDataRaw[idx] as number | null)
+              const maxDataRawOrdered = monthOrderIdx.map((idx) => maxDataRaw[idx] as number | null)
+              const calDataRawOrdered = monthOrderIdx.map((idx) => calDataRaw[idx] as number | null)
+              const mC1Ordered = monthOrderIdx.map((idx) => mC1Raw[idx] as number | null)
+              const mC2Ordered = monthOrderIdx.map((idx) => mC2Raw[idx] as number | null)
+              const mC3Ordered = monthOrderIdx.map((idx) => mC3Raw[idx] as number | null)
+              const minutesData = minutesDataRawOrdered.map((v: number | null) => (typeof v === 'number' ? v : 0))
+              const avgData = avgDataRawOrdered.map((v: number | null) => (typeof v === 'number' ? v : 0))
+              const maxData = maxDataRawOrdered.map((v: number | null) => (typeof v === 'number' ? v : 0))
+              const calData = calDataRawOrdered.map((v: number | null) => (typeof v === 'number' ? v : 0))
+              const mC1 = mC1Ordered.map((v: number | null) => (typeof v === 'number' ? v : 0))
+              const mC2 = mC2Ordered.map((v: number | null) => (typeof v === 'number' ? v : 0))
+              const mC3 = mC3Ordered.map((v: number | null) => (typeof v === 'number' ? v : 0))
 
               const width = 500
               const height = 80
@@ -327,35 +402,128 @@ export default function ExercisesPage() {
                     
                   </div>
                   <div className="flex items-center gap-10 justify-center">
-                    {/* 왼쪽: 운동시간 바 차트 */}
+                    {/* 왼쪽: 운동시간 바 차트 (카테고리≠전체일 때 정확도 캡 오버레이) */}
                     <div>
-                      <div className="mb-1 text-xs text-gray-600">운동시간</div>
+                      <div className="mb-1 text-xs text-gray-600 flex items-center gap-3">
+                        {category !== 'all' ? (
+                          <>
+                            <span className="flex items-center gap-1 text-[11px] text-gray-600"><span className="inline-block w-3 h-2 rounded-sm bg-indigo-400"/> 운동시간</span>
+                            <span className="flex items-center gap-1 text-[11px] text-gray-600"><span className="inline-block w-3 h-2 rounded-sm bg-teal-600"/> 정확도</span>
+                            <span className="flex items-center gap-1 text-[11px] text-gray-600"><span className="inline-block w-3 h-2 rounded-sm bg-yellow-500"/> 칼로리</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="flex items-center gap-1 text-[11px] text-gray-600"><span className="inline-block w-3 h-2 rounded-sm bg-[#2563eb]"/> 근력</span>
+                            <span className="flex items-center gap-1 text-[11px] text-gray-600"><span className="inline-block w-3 h-2 rounded-sm bg-[#16a34a]"/> 지구력</span>
+                            <span className="flex items-center gap-1 text-[11px] text-gray-600"><span className="inline-block w-3 h-2 rounded-sm bg-[#ec4899]"/> 유연성</span>
+                            <span className="flex items-center gap-1 text-[11px] text-gray-600"><span className="inline-block w-3 h-2 rounded-sm bg-yellow-500"/> 칼로리</span>
+                          </>
+                        )}
+                      </div>
                       <svg width={width} height={height} className="block">
                         {minutesData.map((v, i) => {
                           const h = minutesMax > 0 ? Math.round((v / minutesMax) * (height - 6)) : 0
                           const x = 12 + i * (barW + gap)
                           const y = height - 3 - h
+                          const accVal = r?.accuracy?.[monthOrderIdx[i]]
+                          const accText = category !== 'all' ? ` / 정확도 ${typeof accVal === 'number' ? accVal : '-'}%` : ''
+                          const calVal = calData[i]
+                          const calH = caloriesMax > 0 ? Math.round((calVal / caloriesMax) * (height - 6)) : 0
+                          const minutesBarW = Math.max(2, Math.floor(barW * 0.85))
+                          const calBarW = Math.max(0, barW - minutesBarW)
+                          const minutesX = x
+                          const calX = x + minutesBarW
                           return (
-                            <rect
-                              key={i}
-                              x={x}
-                              y={y}
-                              width={barW}
-                              height={h}
-                              rx={1}
-                              className={'fill-indigo-500'}
-                              opacity={(r?.minutes?.[i] ?? null) == null ? 0.25 : 1}
-                              onMouseEnter={(e) => setTooltip({ x: e.clientX + 12, y: e.clientY + 12, content: `${num}. ${(s?.name) ?? '-'} · ${i + 1}월 운동시간 ${v}분` })}
-                              onMouseMove={(e) => setTooltip((prev) => (prev ? { ...prev, x: e.clientX + 12, y: e.clientY + 12 } : prev))}
-                              onMouseLeave={() => setTooltip(null)}
-                            />
+                            <g key={i}>
+                              {category === 'all' ? (() => {
+                                const total = v
+                                const c1 = mC1[i]
+                                const c2 = mC2[i]
+                                const c3 = mC3[i]
+                                const h1 = Math.round(h * (total > 0 ? c1 / total : 0))
+                                const h2 = Math.round(h * (total > 0 ? c2 / total : 0))
+                                const h3 = Math.max(0, h - h1 - h2)
+                                let yCursor = height - 3 - h
+                                const parts: {h:number; color:string; label:string}[] = [
+                                  { h: h1, color: '#2563eb', label: '근력' },
+                                  { h: h2, color: '#16a34a', label: '심폐' },
+                                  { h: h3, color: '#ec4899', label: '유연성' },
+                                ]
+                                return (
+                                  <g>
+                                    {parts.map((p, idx2) => {
+                                      const rectEl = (
+                                        <rect
+                                          key={`stack-${idx2}`}
+                                          x={minutesX}
+                                          y={yCursor}
+                                          width={minutesBarW}
+                                          height={p.h}
+                                          rx={1}
+                                          style={{ fill: p.color }}
+                                          opacity={(r?.minutes?.[monthOrderIdx[i]] ?? null) == null ? 0.25 : 1}
+                                          onMouseEnter={(e) => setTooltip({ x: e.clientX + 12, y: e.clientY + 12, content: `${num}. ${(s?.name) ?? '-'} · ${monthOrderIdx[i] + 1}월 ${p.label} ${p.h ? Math.round(total * (p.h / h)) : 0}분 / 총 ${v}분` })}
+                                          onMouseMove={(e) => setTooltip((prev) => (prev ? { ...prev, x: e.clientX + 12, y: e.clientY + 12 } : prev))}
+                                          onMouseLeave={() => setTooltip(null)}
+                                        />
+                                      )
+                                      yCursor += p.h
+                                      return rectEl
+                                    })}
+                                  </g>
+                                )
+                              })() : (
+                                <rect
+                                  x={minutesX}
+                                  y={y}
+                                  width={minutesBarW}
+                                  height={h}
+                                  rx={1}
+                                  className={'fill-indigo-400'}
+                                  opacity={(r?.minutes?.[monthOrderIdx[i]] ?? null) == null ? 0.25 : 1}
+                                  onMouseEnter={(e) => setTooltip({ x: e.clientX + 12, y: e.clientY + 12, content: `${num}. ${(s?.name) ?? '-'} · ${monthOrderIdx[i] + 1}월 운동시간 ${v}분${accText}` })}
+                                  onMouseMove={(e) => setTooltip((prev) => (prev ? { ...prev, x: e.clientX + 12, y: e.clientY + 12 } : prev))}
+                                  onMouseLeave={() => setTooltip(null)}
+                                />
+                              )}
+                              {category !== 'all' && (() => {
+                                const acc = accVal
+                                if (typeof acc !== 'number') return null
+                                const accClamped = Math.max(0, Math.min(100, acc))
+                                const capH = Math.round(h * (accClamped / 100))
+                                const capY = height - 3 - capH
+                                return (
+                                  <rect
+                                    x={minutesX}
+                                    y={capY}
+                                    width={minutesBarW}
+                                    height={capH}
+                                    rx={1}
+                                    className={'fill-teal-600'}
+                                    pointerEvents="none"
+                                  />
+                                )
+                              })()}
+                              <rect
+                                x={calX}
+                                y={height - 3 - calH}
+                                width={calBarW}
+                                height={calH}
+                                rx={1}
+                                className={'fill-yellow-500'}
+                                opacity={(r?.calories?.[monthOrderIdx[i]] ?? null) == null ? 0.25 : 1}
+                                onMouseEnter={(e) => setTooltip({ x: e.clientX + 12, y: e.clientY + 12, content: `${num}. ${(s?.name) ?? '-'} · ${monthOrderIdx[i] + 1}월 칼로리 ${typeof calVal === 'number' ? calVal.toFixed(1) : '-'}kcal` })}
+                                onMouseMove={(e) => setTooltip((prev) => (prev ? { ...prev, x: e.clientX + 12, y: e.clientY + 12 } : prev))}
+                                onMouseLeave={() => setTooltip(null)}
+                              />
+                            </g>
                           )
                         })}
                         <line x1="8" y1={height - 3} x2={width - 8} y2={height - 3} stroke="#E5E7EB" strokeWidth="1" />
                       </svg>
                       <div className="mt-1 grid grid-cols-12 gap-1">
                         {months.map((m, i) => (
-                          <div key={i} className="text-[10px] text-center text-gray-400">{i + 1}</div>
+                          <div key={`${contentKey}-${i}`} className={`text-[10px] text-center text-gray-400`}>{monthOrderIdx[i] + 1}</div>
                         ))}
                       </div>
                     </div>
@@ -370,8 +538,8 @@ export default function ExercisesPage() {
                         <line x1="8" y1={height - 3} x2={width - 8} y2={height - 3} stroke="#E5E7EB" strokeWidth="1" />
                         {avgData.map((v: number, i: number) => {
                           if (i === 0) return null
-                          const prev = avgDataRaw[i - 1]
-                          const curr = avgDataRaw[i]
+                          const prev = avgDataRawOrdered[i - 1]
+                          const curr = avgDataRawOrdered[i]
                           if (prev == null || curr == null) return null
                           const x1 = 12 + (i - 1) * (barW + gap) + barW / 2
                           const x2 = 12 + i * (barW + gap) + barW / 2
@@ -381,8 +549,8 @@ export default function ExercisesPage() {
                         })}
                         {maxData.map((v: number, i: number) => {
                           if (i === 0) return null
-                          const prev = maxDataRaw[i - 1]
-                          const curr = maxDataRaw[i]
+                          const prev = maxDataRawOrdered[i - 1]
+                          const curr = maxDataRawOrdered[i]
                           if (prev == null || curr == null) return null
                           const x1 = 12 + (i - 1) * (barW + gap) + barW / 2
                           const x2 = 12 + i * (barW + gap) + barW / 2
@@ -390,7 +558,7 @@ export default function ExercisesPage() {
                           const y2 = height - 3 - Math.round((maxData[i] / bpmMax) * (height - 6))
                           return <line key={`max-b-${i}`} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#F43F5E" strokeWidth="2" />
                         })}
-                        {avgDataRaw.map((v: number | null, i: number) => {
+                        {avgDataRawOrdered.map((v: number | null, i: number) => {
                           if (v == null) return null
                           const cx = 12 + i * (barW + gap) + barW / 2
                           const cy = height - 3 - Math.round(((avgData[i] || 0) / bpmMax) * (height - 6))
@@ -401,13 +569,13 @@ export default function ExercisesPage() {
                               cy={cy}
                               r={2}
                               fill="#6366F1"
-                              onMouseEnter={(e) => setTooltip({ x: e.clientX + 12, y: e.clientY + 12, content: `${num}. ${(s?.name) ?? '-'} · ${i + 1}월 평균 ${avgData[i]}` })}
+                              onMouseEnter={(e) => setTooltip({ x: e.clientX + 12, y: e.clientY + 12, content: `${num}. ${(s?.name) ?? '-'} · ${monthOrderIdx[i] + 1}월 평균 ${avgData[i]}` })}
                               onMouseMove={(e) => setTooltip((prev) => (prev ? { ...prev, x: e.clientX + 12, y: e.clientY + 12 } : prev))}
                               onMouseLeave={() => setTooltip(null)}
                             />
                           )
                         })}
-                        {maxDataRaw.map((v: number | null, i: number) => {
+                        {maxDataRawOrdered.map((v: number | null, i: number) => {
                           if (v == null) return null
                           const cx = 12 + i * (barW + gap) + barW / 2
                           const cy = height - 3 - Math.round(((maxData[i] || 0) / bpmMax) * (height - 6))
@@ -418,7 +586,7 @@ export default function ExercisesPage() {
                               cy={cy}
                               r={2}
                               fill="#F43F5E"
-                              onMouseEnter={(e) => setTooltip({ x: e.clientX + 12, y: e.clientY + 12, content: `${num}. ${(s?.name) ?? '-'} · ${i + 1}월 최대 ${maxData[i]}` })}
+                              onMouseEnter={(e) => setTooltip({ x: e.clientX + 12, y: e.clientY + 12, content: `${num}. ${(s?.name) ?? '-'} · ${monthOrderIdx[i] + 1}월 최대 ${maxData[i]}` })}
                               onMouseMove={(e) => setTooltip((prev) => (prev ? { ...prev, x: e.clientX + 12, y: e.clientY + 12 } : prev))}
                               onMouseLeave={() => setTooltip(null)}
                             />
@@ -435,7 +603,7 @@ export default function ExercisesPage() {
                               width={barW}
                               height={height}
                               fill="transparent"
-                              onMouseEnter={(e) => setTooltip({ x: e.clientX + 12, y: e.clientY + 12, content: `${num}. ${(s?.name) ?? '-'} · ${i + 1}월 평균 ${avgData[i]} / 최대 ${maxData[i]}` })}
+                              onMouseEnter={(e) => setTooltip({ x: e.clientX + 12, y: e.clientY + 12, content: `${num}. ${(s?.name) ?? '-'} · ${monthOrderIdx[i] + 1}월 평균 ${avgData[i]} / 최대 ${maxData[i]}` })}
                               onMouseMove={(e) => setTooltip((prev) => (prev ? { ...prev, x: e.clientX + 12, y: e.clientY + 12 } : prev))}
                               onMouseLeave={() => setTooltip(null)}
                             />
@@ -444,7 +612,7 @@ export default function ExercisesPage() {
                       </svg>
                       <div className="mt-1 grid grid-cols-12 gap-1">
                         {months.map((m, i) => (
-                          <div key={i} className="text-[10px] text-center text-gray-400">{i + 1}</div>
+                          <div key={i} className="text-[10px] text-center text-gray-400">{monthOrderIdx[i] + 1}</div>
                         ))}
                       </div>
                     </div>

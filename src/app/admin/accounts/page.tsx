@@ -15,7 +15,7 @@ interface OperatorAccountItem {
 }
 
 interface SchoolBriefMap {
-  [schoolId: string]: { group_no: string; name: string }
+  [schoolId: string]: { group_no: string; name: string; min_end_date?: string | null }
 }
 
 export default function AccountsPage() {
@@ -38,6 +38,12 @@ export default function AccountsPage() {
     school_id: '',
     is_active: true,
   })
+
+  // filters
+  const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'school'>('all')
+  const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'inactive'>('all')
+  const [groupNoQuery, setGroupNoQuery] = useState('')
+  const [schoolNameQuery, setSchoolNameQuery] = useState('')
 
   const fetchList = async () => {
     setLoading(true)
@@ -64,7 +70,7 @@ export default function AccountsPage() {
       const map: SchoolBriefMap = {}
       for (const item of (data.items || [])) {
         if (item && item.id) {
-          map[item.id] = { group_no: item.group_no, name: item.name }
+          map[item.id] = { group_no: item.group_no, name: item.name, min_end_date: (item as any).min_end_date ?? null }
         }
       }
       setSchoolMap(map)
@@ -142,6 +148,30 @@ export default function AccountsPage() {
   }
 
   const rows = useMemo(() => items.map((item, index) => ({ index: index + 1, ...item })), [items])
+  const filteredRows = useMemo(() => {
+    const gq = groupNoQuery.trim().toLowerCase()
+    const sq = schoolNameQuery.trim().toLowerCase()
+    return rows.filter((row) => {
+      if (roleFilter !== 'all' && row.role !== roleFilter) return false
+      if (activeFilter !== 'all') {
+        if (activeFilter === 'active' && !row.is_active) return false
+        if (activeFilter === 'inactive' && row.is_active) return false
+      }
+      const school = row.school_id ? schoolMap[row.school_id] : undefined
+      const groupNo = (school?.group_no || '').toLowerCase()
+      const schoolName = (school?.name || '').toLowerCase()
+      if (gq && !groupNo.includes(gq)) return false
+      if (sq && !schoolName.includes(sq)) return false
+      return true
+    })
+  }, [rows, roleFilter, activeFilter, groupNoQuery, schoolNameQuery, schoolMap])
+  const pagedRows = useMemo(() => {
+    const start = (page - 1) * pageSize
+    return filteredRows.slice(start, start + pageSize)
+  }, [filteredRows, page, pageSize])
+  useEffect(() => {
+    setPage(1)
+  }, [roleFilter, activeFilter, groupNoQuery, schoolNameQuery])
   const schoolOptions = useMemo(() => {
     return Object.entries(schoolMap)
       .map(([id, v]) => ({ id, name: v.name, group_no: v.group_no }))
@@ -161,6 +191,60 @@ export default function AccountsPage() {
         </div>
       )}
 
+      {/* Filters */}
+      <div className="bg-white/95 rounded-lg shadow p-4">
+        <div className="flex flex-wrap items-end gap-4">
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">권한</label>
+            <select
+              className="block w-40 h-10 px-3 rounded border border-gray-300 bg-white text-sm text-gray-900"
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value as 'all' | 'admin' | 'school')}
+            >
+              <option value="all">전체</option>
+              <option value="admin">관리자</option>
+              <option value="school">학교 계정</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">활성화</label>
+            <select
+              className="block w-40 h-10 px-3 rounded border border-gray-300 bg-white text-sm text-gray-900"
+              value={activeFilter}
+              onChange={(e) => setActiveFilter(e.target.value as 'all' | 'active' | 'inactive')}
+            >
+              <option value="all">전체</option>
+              <option value="active">활성</option>
+              <option value="inactive">비활성</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">그룹번호</label>
+            <input
+              className="block w-48 h-10 px-3 rounded border border-gray-300 bg-white text-sm text-gray-900"
+              placeholder="그룹번호"
+              value={groupNoQuery}
+              onChange={(e) => setGroupNoQuery(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">소속학교</label>
+            <input
+              className="block w-64 h-10 px-3 rounded border border-gray-300 bg-white text-sm text-gray-900"
+              placeholder="학교명 검색"
+              value={schoolNameQuery}
+              onChange={(e) => setSchoolNameQuery(e.target.value)}
+            />
+          </div>
+          <div className="ml-auto">
+            <button
+              onClick={() => { setRoleFilter('all'); setActiveFilter('all'); setGroupNoQuery(''); setSchoolNameQuery('') }}
+              className="h-10 px-3 rounded border border-gray-300 bg-white text-sm text-gray-700 hover:bg-gray-50"
+            >초기화</button>
+          </div>
+        </div>
+      </div>
+
       <div className="bg-white/95 rounded-lg shadow overflow-hidden">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
@@ -172,6 +256,7 @@ export default function AccountsPage() {
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">그룹번호</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">소속학교</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">활성화</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">특이사항</th>
               <th className="px-4 py-3"></th>
             </tr>
           </thead>
@@ -180,12 +265,12 @@ export default function AccountsPage() {
               <tr>
                 <td colSpan={8} className="px-4 py-6 text-center text-gray-500">불러오는 중...</td>
               </tr>
-            ) : rows.length === 0 ? (
+            ) : filteredRows.length === 0 ? (
               <tr>
                 <td colSpan={8} className="px-4 py-6 text-center text-gray-500">데이터가 없습니다.</td>
               </tr>
             ) : (
-              rows.map((row) => (
+              pagedRows.map((row) => (
                 <tr key={row.id}>
                   <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{row.index}</td>
                   <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{row.username}</td>
@@ -198,7 +283,22 @@ export default function AccountsPage() {
                       {row.is_active ? '활성' : '비활성'}
                     </span>
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-right text-sm">
+                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                  {(() => {
+                    const s = row.school_id ? schoolMap[row.school_id] : undefined
+                    const end = s?.min_end_date || null
+                    if (!end) return '-'
+                    const today = new Date()
+                    const endDate = new Date(end + 'T00:00:00')
+                    const diffMs = endDate.getTime() - new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()
+                    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+                    if (diffDays < 0) {
+                      return <span className="text-red-600">기간종료({diffDays}일)</span>
+                    }
+                    return <span className="text-gray-900">{diffDays}일 남음</span>
+                  })()}
+                </td>
+                <td className="px-4 py-3 whitespace-nowrap text-right text-sm">
                     <div className="inline-flex items-center gap-2">
                       <button onClick={() => handleOpenEdit(row)} className="px-3 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded">수정</button>
                       <button onClick={() => handleDelete(row.id)} className="px-3 py-1 bg-red-100 hover:bg-red-200 text-red-700 rounded">삭제</button>
@@ -213,7 +313,7 @@ export default function AccountsPage() {
 
       {/* Pagination */}
       <div className="flex items-center justify-between">
-        <div className="text-sm text-white/80">총 {total}건 • 페이지 {page} / {Math.max(1, Math.ceil(total / pageSize))}</div>
+        <div className="text-sm text-white/80">총 {filteredRows.length}건 • 페이지 {page} / {Math.max(1, Math.ceil((filteredRows.length || 1) / pageSize))}</div>
         <div className="inline-flex gap-2">
           <button
             disabled={page <= 1}
@@ -221,7 +321,7 @@ export default function AccountsPage() {
             className="px-3 py-1 rounded bg-white/20 text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white/30"
           >이전</button>
           <button
-            disabled={page >= Math.ceil(total / pageSize)}
+            disabled={page >= Math.ceil((filteredRows.length || 1) / pageSize)}
             onClick={() => setPage((p) => p + 1)}
             className="px-3 py-1 rounded bg-white/20 text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white/30"
           >다음</button>

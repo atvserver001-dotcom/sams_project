@@ -79,11 +79,16 @@ export default function SchoolLayout({ children }: { children: React.ReactNode }
                         </Link>
                       )
                     }
-                    // 다른 디바이스는 메뉴명만 표시 (페이지 미정)
+                    // 다른 디바이스는 회색 텍스트로 표시하고 클릭 시 안내 팝업
                     return (
-                      <span key={`${d.device_id}-${idx}`} className="text-gray-800">
+                      <button
+                        key={`${d.device_id}-${idx}`}
+                        type="button"
+                        onClick={() => alert('준비 중 입니다.')}
+                        className="text-gray-400 cursor-pointer"
+                      >
                         {d.device_name}
-                      </span>
+                      </button>
                     )
                   }).flatMap((node, i, arr) => i < arr.length - 1 ? [node, <span key={`sep-${i}`} className="text-gray-300">|</span>] : [node])}
                 </div>

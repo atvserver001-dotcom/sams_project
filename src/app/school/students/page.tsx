@@ -7,6 +7,7 @@ type Gender = 'M' | 'F'
 
 interface StudentRow {
   id: string
+  year: number
   grade: number
   class_no: number
   student_no: number
@@ -23,6 +24,13 @@ export default function StudentsPage() {
   const { user } = useAuth()
   const [grade, setGrade] = useState<number>(1)
   const [classNo, setClassNo] = useState<number>(1)
+  // 학년도: 3~12월은 해당 연도, 1~2월은 전년도
+  const computeDefaultYear = () => {
+    const now = new Date()
+    const m = now.getMonth() + 1
+    return (m === 1 || m === 2) ? now.getFullYear() - 1 : now.getFullYear()
+  }
+  const [year, setYear] = useState<number>(computeDefaultYear())
   const [schoolType, setSchoolType] = useState<1 | 2 | 3>(1)
   const [students, setStudents] = useState<StudentRow[]>([])
   const [loading, setLoading] = useState(false)
@@ -58,7 +66,7 @@ export default function StudentsPage() {
     try {
       setLoading(true)
       setError(null)
-      const res = await fetch(`/api/school/students?grade=${grade}&class_no=${classNo}`)
+      const res = await fetch(`/api/school/students?year=${year}&grade=${grade}&class_no=${classNo}`, { credentials: 'include' })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || '학생 조회 실패')
       setStudents(data.students as StudentRow[])
@@ -74,7 +82,7 @@ export default function StudentsPage() {
   useEffect(() => {
     fetchStudents()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [grade, classNo])
+  }, [year, grade, classNo])
 
   const openCreate = () => {
     setEditTarget(null)
@@ -88,7 +96,7 @@ export default function StudentsPage() {
 
   const handleDelete = async (id: string) => {
     if (!confirm('정말 삭제하시겠습니까?')) return
-    const res = await fetch(`/api/school/students/${id}`, { method: 'DELETE' })
+    const res = await fetch(`/api/school/students/${id}`, { method: 'DELETE', credentials: 'include' })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) {
       alert(data.error || '삭제 실패')
@@ -100,6 +108,7 @@ export default function StudentsPage() {
   const openCreateWithNumber = (studentNo: number) => {
     setEditTarget({
       id: '', // New student, no ID yet
+      year,
       grade,
       class_no: classNo,
       student_no: studentNo,
@@ -123,6 +132,25 @@ export default function StudentsPage() {
 
       <div className="bg-white/95 rounded-lg shadow p-6">
         <div className="flex flex-wrap items-end gap-4">
+          <div>
+            <label className="block text-xs font-semibold text-indigo-700 mb-1">년도</label>
+            <select
+              value={year}
+              onChange={(e) => setYear(Number(e.target.value))}
+              className="block w-36 h-12 px-4 rounded-lg border-2 border-indigo-300 bg-white shadow text-lg font-semibold text-center text-gray-900 focus:outline-none outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300 hover:border-indigo-300 active:border-indigo-300"
+            >
+              {(() => {
+                const base = computeDefaultYear()
+                const years: number[] = []
+                for (let y = base + 1; y >= base - 5; y--) {
+                  years.push(y)
+                }
+                return years.map((y) => (
+                  <option key={y} value={y}>{y}년</option>
+                ))
+              })()}
+            </select>
+          </div>
           <div>
             <label className="block text-xs font-semibold text-indigo-700 mb-1">학년</label>
             <select
@@ -241,6 +269,7 @@ export default function StudentsPage() {
           open={dialogOpen}
           onClose={() => setDialogOpen(false)}
           initial={editTarget}
+          year={year}
           grade={grade}
           classNo={classNo}
           onSaved={async () => {
@@ -257,14 +286,16 @@ interface StudentDialogProps {
   open: boolean
   onClose: () => void
   initial: StudentRow | null
+  year: number
   grade: number
   classNo: number
   onSaved: () => Promise<void> | void
 }
 
-function StudentDialog({ open, onClose, initial, grade, classNo, onSaved }: StudentDialogProps) {
-  const isEdit = !!initial
+function StudentDialog({ open, onClose, initial, year, grade, classNo, onSaved }: StudentDialogProps) {
+  const isEdit = Boolean(initial && initial.id)
   interface StudentForm {
+    year: number
     grade: number
     class_no: number
     student_no: string
@@ -277,6 +308,7 @@ function StudentDialog({ open, onClose, initial, grade, classNo, onSaved }: Stud
     notes: string
   }
   const [form, setForm] = useState<StudentForm>({
+    year,
     grade,
     class_no: classNo,
     student_no: initial && initial.student_no != null ? String(initial.student_no) : '',
@@ -292,11 +324,16 @@ function StudentDialog({ open, onClose, initial, grade, classNo, onSaved }: Stud
   const isCreateWithFixedNumber = initial != null && initial.id === '' && initial.student_no != null
 
   useEffect(() => {
-    setForm((prev) => ({ ...prev, grade, class_no: classNo }))
-  }, [grade, classNo])
+    setForm((prev) => ({ ...prev, year, grade, class_no: classNo }))
+  }, [year, grade, classNo])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
+    if (name === 'year') {
+      const parsed = Number(value)
+      setForm((prev) => ({ ...prev, year: Number.isFinite(parsed) ? parsed : prev.year }))
+      return
+    }
     setForm((prev) => ({ ...prev, [name]: value }))
   }
 
@@ -345,15 +382,15 @@ function StudentDialog({ open, onClose, initial, grade, classNo, onSaved }: Stud
       return
     }
 
-    // 수정 시 번호 중복 방지: 이미 존재하는 학생 번호인지 사전 검사
+    // 수정 시 번호 중복 방지: 동일 학년도+반에서만 체크
     if (isEdit) {
       const newNo = parsedNo
       if (Number.isFinite(parsedNo)) {
-        const dup = await fetch(`/api/school/students?grade=${grade}&class_no=${classNo}`)
+        const dupSameYear = await fetch(`/api/school/students?year=${year}&grade=${grade}&class_no=${classNo}`, { credentials: 'include' })
           .then(r => r.json())
           .then(d => (d.students as any[] || []).some((st: any) => st.student_no === newNo && st.id !== (initial as any).id))
           .catch(() => false)
-        if (dup) {
+        if (dupSameYear) {
           alert('해당 번호에 존재하는 학생데이터가 있습니다.')
           return
         }
@@ -361,6 +398,7 @@ function StudentDialog({ open, onClose, initial, grade, classNo, onSaved }: Stud
     }
 
     const payload = {
+      year: Number(form.year),
       grade: Number(form.grade),
       class_no: Number(form.class_no),
       student_no: form.student_no === '' ? undefined : Number(form.student_no),
@@ -379,12 +417,14 @@ function StudentDialog({ open, onClose, initial, grade, classNo, onSaved }: Stud
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        credentials: 'include',
       })
     } else {
       res = await fetch('/api/school/students', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        credentials: 'include',
       })
     }
 
@@ -409,6 +449,10 @@ function StudentDialog({ open, onClose, initial, grade, classNo, onSaved }: Stud
         </div>
 
         <div className="grid grid-cols-1 gap-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">년도</label>
+            <input name="year" value={form.year} onChange={handleChange} type="number" className="w-full h-10 px-3 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" />
+          </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">번호</label>
             <input name="student_no" value={form.student_no} onChange={(e) => handleIntChange('student_no', e.target.value)} type="text" inputMode="numeric" pattern="[0-9]*" maxLength={2} className="w-full h-10 px-3 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm disabled:bg-gray-100" disabled={isCreateWithFixedNumber} />

@@ -55,25 +55,31 @@ export async function GET(request: NextRequest) {
   const mgmtRows = (mgmt ?? []) as Array<{ device_id: string; start_date: string | null; end_date: string | null; limited_period: boolean }>
   const deviceIds = Array.from(new Set(mgmtRows.map((m) => m.device_id)))
 
-  let idToName = new Map<string, string>()
+  let idToDevice = new Map<string, { device_name: string; page?: boolean }>()
   if (deviceIds.length) {
     const { data: deviceRows, error: devErr } = await supabaseAdmin
       .from('devices')
-      .select('id, device_name')
+      .select('id, device_name, page')
       .in('id', deviceIds)
     if (devErr) return NextResponse.json({ error: devErr.message }, { status: 500 })
-    for (const r of (deviceRows ?? []) as Array<{ id: string; device_name: string }>) {
-      idToName.set(r.id, r.device_name)
+    for (const r of (deviceRows ?? []) as Array<{ id: string; device_name: string; page?: boolean }>) {
+      idToDevice.set(r.id, { device_name: r.device_name, page: !!r.page })
     }
   }
 
-  const items = mgmtRows.map((m) => ({
-    device_id: m.device_id,
-    device_name: idToName.get(m.device_id) || '-',
-    start_date: m.start_date,
-    end_date: m.end_date,
-    limited_period: !!m.limited_period,
-  }))
+  const items = mgmtRows
+    .map((m) => {
+      const meta = idToDevice.get(m.device_id)
+      return {
+        device_id: m.device_id,
+        device_name: meta?.device_name || '-',
+        start_date: m.start_date,
+        end_date: m.end_date,
+        limited_period: !!m.limited_period,
+        page: meta?.page ?? false,
+      }
+    })
+    .filter((x) => x.page)
 
   return NextResponse.json({ items }, { status: 200 })
 }

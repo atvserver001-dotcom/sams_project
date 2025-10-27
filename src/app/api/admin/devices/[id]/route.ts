@@ -24,18 +24,22 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const { id } = await params
   const body = await req.json()
-  const { device_name } = body as { device_name?: string }
-  const updatePayload: { device_name?: string } = {}
+  const { device_name, page } = body as { device_name?: string; page?: boolean }
+  const updatePayload: { device_name?: string; page?: boolean } = {}
   if (device_name !== undefined) {
     if (!device_name.trim()) return NextResponse.json({ error: 'device_name은 비울 수 없습니다.' }, { status: 400 })
     updatePayload.device_name = device_name.trim()
+  }
+
+  if (page !== undefined) {
+    updatePayload.page = !!page
   }
 
   const { data, error } = await (supabaseAdmin
     .from('devices') as any)
     .update(updatePayload)
     .eq('id', id)
-    .select('id, device_name, sort_order')
+    .select('id, device_name, sort_order, page')
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

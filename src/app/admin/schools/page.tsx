@@ -34,6 +34,26 @@ export default function SchoolsPage() {
   const [modalLoading, setModalLoading] = useState(false)
   const [deviceAssignments, setDeviceAssignments] = useState<DeviceAssignment[]>([])
 
+  // deviceMaster는 서버에서 sort_order 기준으로 정렬되어 옴. 이 순서를 기준으로 선택된 디바이스도 표시 정렬
+  const idToOrderIndex = useMemo(() => {
+    const map = new Map<string, number>()
+    deviceMaster.forEach((d, idx) => map.set(d.id, idx))
+    return map
+  }, [deviceMaster])
+  const sortedAssignments = useMemo(() => {
+    const list = [...deviceAssignments]
+    return list.sort((a, b) => {
+      const ai = idToOrderIndex.get(a.device_id)
+      const bi = idToOrderIndex.get(b.device_id)
+      const av = ai === undefined ? Number.POSITIVE_INFINITY : ai
+      const bv = bi === undefined ? Number.POSITIVE_INFINITY : bi
+      if (av !== bv) return av - bv
+      const an = a.device_name || deviceMaster.find(m => m.id === a.device_id)?.device_name || ''
+      const bn = b.device_name || deviceMaster.find(m => m.id === b.device_id)?.device_name || ''
+      return an.localeCompare(bn)
+    })
+  }, [deviceAssignments, idToOrderIndex, deviceMaster])
+
   const fetchDevices = async () => {
     try {
       const res = await fetch('/api/admin/devices', { credentials: 'include' })
@@ -342,11 +362,11 @@ export default function SchoolsPage() {
               {/* 선택된 디바이스 기간/제한 설정 */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">선택된 디바이스 설정</label>
-                {deviceAssignments.length === 0 ? (
+                {sortedAssignments.length === 0 ? (
                   <div className="text-sm text-gray-500">선택된 디바이스가 없습니다.</div>
                 ) : (
                   <div className="space-y-3">
-                    {deviceAssignments.map((a, idx) => (
+                    {sortedAssignments.map((a, idx) => (
                       <div key={a.device_id} className="grid grid-cols-1 sm:grid-cols-7 gap-2 items-center">
                         <div className="col-span-2 text-sm text-gray-900 truncate">{a.device_name || deviceMaster.find(m => m.id === a.device_id)?.device_name || a.device_id}</div>
                         <div className="col-span-2">
@@ -356,7 +376,8 @@ export default function SchoolsPage() {
                             value={a.start_date || ''}
                             onChange={(e) => {
                               const v = e.target.value || null
-                              setDeviceAssignments((prev) => prev.map((x, i) => i === idx ? { ...x, start_date: v } : x))
+                              // idx는 sorted 기준이므로 device_id로 직접 매핑
+                              setDeviceAssignments((prev) => prev.map((x) => x.device_id === a.device_id ? { ...x, start_date: v } : x))
                             }}
                             disabled={!a.limited_period}
                           />
@@ -368,7 +389,7 @@ export default function SchoolsPage() {
                             value={a.end_date || ''}
                             onChange={(e) => {
                               const v = e.target.value || null
-                              setDeviceAssignments((prev) => prev.map((x, i) => i === idx ? { ...x, end_date: v } : x))
+                              setDeviceAssignments((prev) => prev.map((x) => x.device_id === a.device_id ? { ...x, end_date: v } : x))
                             }}
                             disabled={!a.limited_period}
                           />
@@ -380,15 +401,16 @@ export default function SchoolsPage() {
                             checked={!a.limited_period}
                             onChange={(e) => {
                               const unlimited = e.target.checked
-                              setDeviceAssignments((prev) => prev.map((x, i) => {
-                                if (i !== idx) return x
-                                return {
-                                  ...x,
-                                  limited_period: !unlimited,
-                                  start_date: unlimited ? null : x.start_date,
-                                  end_date: unlimited ? null : x.end_date,
-                                }
-                              }))
+                              setDeviceAssignments((prev) => prev.map((x) => (
+                                x.device_id !== a.device_id
+                                  ? x
+                                  : {
+                                      ...x,
+                                      limited_period: !unlimited,
+                                      start_date: unlimited ? null : x.start_date,
+                                      end_date: unlimited ? null : x.end_date,
+                                    }
+                              )))
                             }}
                           />
                           <span>무제한</span>

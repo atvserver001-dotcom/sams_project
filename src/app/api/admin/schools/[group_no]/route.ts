@@ -41,14 +41,16 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ grou
 
   const deviceIds = Array.from(new Set((mgmt ?? []).map((m: any) => m.device_id)))
   let idToName = new Map<string, string>()
+  let idToOrder = new Map<string, number | null | undefined>()
   if (deviceIds.length) {
     const { data: devices, error: devErr } = await supabaseAdmin
       .from('devices')
-      .select('id, device_name')
+      .select('id, device_name, sort_order')
       .in('id', deviceIds)
     if (devErr) return NextResponse.json({ error: devErr.message }, { status: 500 })
-    for (const r of (devices ?? []) as Array<{ id: string; device_name: string }>) {
+    for (const r of (devices ?? []) as Array<{ id: string; device_name: string; sort_order?: number | null }>) {
       idToName.set(r.id, r.device_name)
+      idToOrder.set(r.id, r.sort_order)
     }
   }
 
@@ -60,16 +62,30 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ grou
     limited_period: !!m.limited_period,
   }))
 
+  // devices.sort_order 기준으로 정렬 (없으면 맨 뒤, 이름으로 2차 정렬)
+  devices = devices.sort((a, b) => {
+    const ao = idToOrder.get(a.device_id)
+    const bo = idToOrder.get(b.device_id)
+    const av = ao === null || ao === undefined ? Number.POSITIVE_INFINITY : (ao as number)
+    const bv = bo === null || bo === undefined ? Number.POSITIVE_INFINITY : (bo as number)
+    if (av !== bv) return av - bv
+    return (a.device_name || '').localeCompare(b.device_name || '')
+  })
+
   // [폴백] device_management가 비어있고, 레거시 device_ids가 있는 환경만 안전 체크 후 표시
   try {
     if ((!devices || devices.length === 0) && 'device_ids' in (school as any) && Array.isArray((school as any).device_ids) && (school as any).device_ids.length) {
       const legacyIds = (school as any).device_ids as string[]
       const { data: legacyDevs } = await supabaseAdmin
         .from('devices')
-        .select('id, device_name')
+        .select('id, device_name, sort_order')
         .in('id', legacyIds)
       const idName = new Map<string, string>()
-      for (const r of (legacyDevs ?? []) as Array<{ id: string; device_name: string }>) idName.set(r.id, r.device_name)
+      const idOrder = new Map<string, number | null | undefined>()
+      for (const r of (legacyDevs ?? []) as Array<{ id: string; device_name: string; sort_order?: number | null }>) {
+        idName.set(r.id, r.device_name)
+        idOrder.set(r.id, r.sort_order)
+      }
       devices = legacyIds.map((did) => ({
         device_id: did,
         device_name: idName.get(did) || '-',
@@ -77,6 +93,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ grou
         end_date: null,
         limited_period: false,
       }))
+      devices = devices.sort((a, b) => {
+        const ao = idOrder.get(a.device_id)
+        const bo = idOrder.get(b.device_id)
+        const av = ao === null || ao === undefined ? Number.POSITIVE_INFINITY : (ao as number)
+        const bv = bo === null || bo === undefined ? Number.POSITIVE_INFINITY : (bo as number)
+        if (av !== bv) return av - bv
+        return (a.device_name || '').localeCompare(b.device_name || '')
+      })
     }
   } catch {}
 

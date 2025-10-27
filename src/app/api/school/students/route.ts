@@ -60,32 +60,53 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const gradeParam = searchParams.get('grade')
   const classNoParam = searchParams.get('class_no')
+  const yearParam = searchParams.get('year')
+  const allYears = searchParams.get('all_years') === '1'
 
   if (!gradeParam || !classNoParam) {
-    return NextResponse.json({ error: 'grade, class_no 쿼리 파라미터가 필요합니다.' }, { status: 400 })
+    // 쿼리 파라미터 누락 시, 내용 없는 정상 응답으로 처리하여 콘솔 혼란 제거
+    return new NextResponse(null, { status: 204 })
   }
 
   const grade = Number(gradeParam)
   const class_no = Number(classNoParam)
+  const now = new Date()
+  const currentMonth = now.getMonth() + 1
+  const defaultYear = currentMonth === 1 || currentMonth === 2 ? now.getFullYear() - 1 : now.getFullYear()
+  const year = yearParam ? Number(yearParam) : defaultYear
 
-  if (!Number.isFinite(grade) || !Number.isFinite(class_no)) {
-    return NextResponse.json({ error: 'grade, class_no는 숫자여야 합니다.' }, { status: 400 })
+  if (!Number.isFinite(grade) || !Number.isFinite(class_no) || (!allYears && !Number.isFinite(year))) {
+    return NextResponse.json({ error: 'year, grade, class_no는 숫자여야 합니다.' }, { status: 400 })
   }
 
-  const { data, error } = await supabaseAdmin
+  let query = supabaseAdmin
     .from('students')
     .select('*')
     .eq('school_id', schoolId)
     .eq('grade', grade)
     .eq('class_no', class_no)
-    .order('student_no', { ascending: true })
-    .returns<Database['public']['Tables']['students']['Row'][]>()
+    .order('student_no', { ascending: true }) as any
+
+  if (!allYears) {
+    query = query.eq('year', year)
+  }
+
+  const { data, error } = await (query as any)
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
   return NextResponse.json({ students: data ?? [] })
+}
+
+// CORS 사전요청 및 메타 요청 무해화
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204 })
+}
+
+export async function HEAD() {
+  return new NextResponse(null, { status: 204 })
 }
 
 export async function POST(request: NextRequest) {
@@ -102,6 +123,7 @@ export async function POST(request: NextRequest) {
   }
 
   const {
+    year,
     grade,
     class_no,
     student_no,
@@ -114,12 +136,18 @@ export async function POST(request: NextRequest) {
     notes,
   } = body as Partial<Database['public']['Tables']['students']['Insert']>
 
+  const now = new Date()
+  const currentMonth = now.getMonth() + 1
+  const defaultYear = currentMonth === 1 || currentMonth === 2 ? now.getFullYear() - 1 : now.getFullYear()
+  const resolvedYear = (typeof year === 'number' && Number.isFinite(year)) ? year : defaultYear
+
   if (!grade || !class_no || !student_no || !name) {
-    return NextResponse.json({ error: 'grade, class_no, student_no, name은 필수입니다.' }, { status: 400 })
+    return NextResponse.json({ error: 'year, grade, class_no, student_no, name은 필수입니다.' }, { status: 400 })
   }
 
   const insertPayload: Database['public']['Tables']['students']['Insert'] = {
     school_id: schoolId,
+    year: resolvedYear as number,
     grade,
     class_no,
     student_no,
@@ -140,7 +168,12 @@ export async function POST(request: NextRequest) {
     .single()
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 400 })
+    const message = (error as any)?.message || ''
+    const code = (error as any)?.code || ''
+    if (code === '23505' || message.includes('duplicate key value violates unique constraint')) {
+      return NextResponse.json({ error: '해당 번호에 존재하는 학생데이터가 있습니다.' }, { status: 409 })
+    }
+    return NextResponse.json({ error: message || '요청 처리 중 오류가 발생했습니다.' }, { status: 400 })
   }
 
   return NextResponse.json({ student: data }, { status: 201 })

@@ -30,6 +30,7 @@ export interface Device {
   id: string;
   device_name: string;
   sort_order?: number;
+  page?: boolean; // 운영툴 메뉴 표시 여부
 }
 
 export interface DeviceManagement {
@@ -45,6 +46,7 @@ export interface DeviceManagement {
 export interface Student {
   id: string;
   school_id: string;
+  year: number; // 학년도 (예: 2025)
   grade: number; // 학년 (1-12)
   class_no: number; // 학반
   student_no: number; // 학번 (반 내 번호)
@@ -91,20 +93,21 @@ export interface UserProfile {
   updated_at: string;
 }
 
+// 폐기: 레거시 기록 단건 테이블 타입 (현재 프로젝트에선 사용하지 않음)
 export interface ExerciseRecord {
   id: string;
-  user_id: string;
-  school_id: string;
-  class_id?: string;
-  exercise_type: ExerciseType;
-  exercise_name: string;
-  exercise_date: string; // ISO date string
-  exercise_duration: number; // 분 단위
-  min_heart_rate?: number;
-  avg_heart_rate?: number;
-  max_heart_rate?: number;
-  notes?: string;
+  student_id: string;
+  exercise_type: ExerciseType; // 'endurance' | 'flexibility' | 'strength'
+  year: number; // 연도
+  month: number; // 1-12
+  avg_duration_seconds: number | null; // 평균 운동시간(초)
+  avg_accuracy: number | null; // 평균 정확도(%)
+  avg_bpm: number | null; // 평균 심박수
+  avg_max_bpm: number | null; // 최대 심박 평균
+  avg_calories: number | null; // 평균 칼로리(kcal)
+  record_count: number; // 월 내 집계 건수
   created_at: string;
+  updated_at: string;
 }
 
 export interface PermissionLog {
@@ -361,7 +364,7 @@ export interface Database {
       };
       exercise_records: {
         Row: ExerciseRecord;
-        Insert: Omit<ExerciseRecord, 'id' | 'created_at'>;
+        Insert: Omit<ExerciseRecord, 'id' | 'created_at' | 'updated_at'>;
         Update: Partial<Omit<ExerciseRecord, 'id' | 'created_at'>>;
       };
       permission_logs: {

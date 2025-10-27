@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 
-interface DeviceRow { id: string; device_name: string; sort_order?: number | null }
+interface DeviceRow { id: string; device_name: string; sort_order?: number | null; page?: boolean }
 
 export default function AdminDevicesPage() {
   const { isAdmin } = useAuth()
@@ -15,6 +15,7 @@ export default function AdminDevicesPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [deviceName, setDeviceName] = useState('')
   const [formError, setFormError] = useState('')
+  const [pageChecked, setPageChecked] = useState(false)
 
   const fetchList = async () => {
     setLoading(true)
@@ -39,6 +40,7 @@ export default function AdminDevicesPage() {
     setEditingId(null)
     setDeviceName('')
     setFormError('')
+    setPageChecked(false)
     setIsOpen(true)
   }
 
@@ -46,6 +48,7 @@ export default function AdminDevicesPage() {
     setEditingId(row.id)
     setDeviceName(row.device_name)
     setFormError('')
+    setPageChecked(!!row.page)
     setIsOpen(true)
   }
 
@@ -74,7 +77,7 @@ export default function AdminDevicesPage() {
         method: editingId ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ device_name: name }),
+        body: JSON.stringify({ device_name: name, page: pageChecked }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -161,6 +164,7 @@ export default function AdminDevicesPage() {
             <tr>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">순서</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">디바이스 이름</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">메뉴 표시</th>
               <th className="px-4 py-3"></th>
             </tr>
           </thead>
@@ -178,6 +182,7 @@ export default function AdminDevicesPage() {
                 <tr key={row.id}>
                   <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{row.index}</td>
                   <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{row.device_name}</td>
+                  <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{row.page ? 'ON' : 'OFF'}</td>
                   <td className="px-4 py-3 whitespace-nowrap text-right text-sm">
                     <div className="inline-flex items-center gap-2">
                       <button
@@ -216,6 +221,16 @@ export default function AdminDevicesPage() {
                   onChange={(e) => setDeviceName(e.target.value)}
                   required
                 />
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  id="pageChecked"
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={pageChecked}
+                  onChange={(e) => setPageChecked(e.target.checked)}
+                />
+                <label htmlFor="pageChecked" className="text-sm text-gray-700">운영툴 메뉴 표시</label>
               </div>
               <div className="flex justify-end gap-2 pt-2">
                 <button type="button" onClick={() => setIsOpen(false)} className="px-4 py-2 rounded bg-gray-400 hover:bg-gray-500">취소</button>

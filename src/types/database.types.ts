@@ -187,6 +187,15 @@ export interface ExerciseRecordWithDetails extends ExerciseRecord {
   };
 }
 
+// Supabase JSON 타입 정의 (RPC 인자 등)
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[]
+
 export interface UserProfileWithRelations extends UserProfile {
   schools?: School;
   classes?: Class & {
@@ -392,7 +401,30 @@ export interface Database {
       };
     };
     Functions: {
-      [_ in never]: never;
+      upsert_exercise_record_by_key_idem: {
+        Args: {
+          p_idempotency_key: string
+          p_recognition_key: string
+          p_year: number
+          p_grade: number
+          p_class_no: number
+          p_student_no: number
+          p_exercise_type: ExerciseType
+          p_month: number
+          p_avg_duration_seconds: number | null
+          p_avg_accuracy: number | null
+          p_avg_bpm: number | null
+          p_avg_max_bpm: number | null
+          p_avg_calories: number | null
+        }
+        Returns: boolean
+      }
+      upsert_exercise_records_batch: {
+        Args: {
+          p_items: Json
+        }
+        Returns: number
+      }
     };
     Enums: {
       user_role: UserRole;

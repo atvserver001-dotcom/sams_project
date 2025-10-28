@@ -182,7 +182,13 @@ export default function AdminDevicesPage() {
                 <tr key={row.id}>
                   <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{row.index}</td>
                   <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{row.device_name}</td>
-                  <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{row.page ? 'ON' : 'OFF'}</td>
+                  <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                    <span
+                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${row.page ? 'bg-red-50 text-red-700 border-red-200' : 'bg-gray-50 text-gray-600 border-gray-200'}`}
+                    >
+                      {row.page ? 'ON' : 'OFF'}
+                    </span>
+                  </td>
                   <td className="px-4 py-3 whitespace-nowrap text-right text-sm">
                     <div className="inline-flex items-center gap-2">
                       <button

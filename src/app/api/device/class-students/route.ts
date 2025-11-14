@@ -34,7 +34,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: '잘못된 JSON 본문' }, { status: 400 })
   }
 
-  const { recognition_key, year, grade, class_no } = body || {}
+  // 키 이름 유연 처리: recognition_key | recognitionKey | RecognitionKey, 등
+  const recognition_key =
+    (body as any)?.recognition_key ??
+    (body as any)?.recognitionKey ??
+    (body as any)?.RecognitionKey
+  const year =
+    (body as any)?.year ??
+    (body as any)?.Year
+  const grade =
+    (body as any)?.grade ??
+    (body as any)?.Grade
+  const class_no =
+    (body as any)?.class_no ??
+    (body as any)?.classNo ??
+    (body as any)?.ClassNo
+
   if (!recognition_key) return NextResponse.json({ error: 'recognition_key 필수' }, { status: 400 })
   if (!Number.isFinite(Number(year))) return NextResponse.json({ error: 'year 숫자여야 합니다.' }, { status: 400 })
   if (!Number.isFinite(Number(grade))) return NextResponse.json({ error: 'grade 숫자여야 합니다.' }, { status: 400 })

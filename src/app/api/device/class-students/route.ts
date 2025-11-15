@@ -58,9 +58,9 @@ export async function POST(request: NextRequest) {
   // 1) 학교 조회
   const { data: school, error: schoolErr } = await supabaseAdmin
     .from('schools')
-    .select('id')
+    .select('id, school_type')
     .eq('recognition_key', recognition_key)
-    .maybeSingle<{ id: string }>()
+    .maybeSingle<{ id: string; school_type: number }>()
 
   if (schoolErr) return NextResponse.json({ error: schoolErr.message }, { status: 500 })
   if (!school) return NextResponse.json({ error: '학교를 찾을 수 없습니다.' }, { status: 404 })
@@ -79,6 +79,7 @@ export async function POST(request: NextRequest) {
   if (studentsErr) return NextResponse.json({ error: studentsErr.message }, { status: 500 })
 
   return NextResponse.json({
+    school_type: school.school_type ?? null,
     rows: (students ?? []).map(s => ({
       student_no: s.student_no ?? null,
       name: s.name ?? '',

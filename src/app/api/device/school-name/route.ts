@@ -28,9 +28,9 @@ export async function POST(request: NextRequest) {
 
   const { data: school, error } = await supabaseAdmin
     .from('schools')
-    .select('id, name')
+    .select('id, name, school_type')
     .eq('recognition_key', String(recognition_key))
-    .maybeSingle<{ id: string; name: string }>()
+    .maybeSingle<{ id: string; name: string; school_type: number }>()
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
@@ -42,6 +42,7 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     school_id: school.id,
     school_name: school.name,
+    school_type: school.school_type ?? null,
   })
 }
 

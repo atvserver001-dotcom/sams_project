@@ -318,7 +318,7 @@ export default function ExercisesPage() {
                         <td className="px-2 py-2 whitespace-nowrap text-xs text-center text-indigo-700 font-semibold">운동시간</td>
                         {monthOrderIdx.map((origIdx, i) => {
                           const v = minutes[origIdx] as number | null
-                          return <td key={i} className="px-2 py-2 whitespace-nowrap text-sm text-center text-gray-900" style={{ width: monthCellPx }}>{v ?? '-'}</td>
+                          return <td key={i} className="px-2 py-2 whitespace-nowrap text-sm text-center text-gray-900" style={{ width: monthCellPx }}>{typeof v === 'number' ? v.toFixed(1) : '-'}</td>
                         })}
                       </tr>
                       <tr className="  bg-teal-50">
@@ -426,6 +426,7 @@ export default function ExercisesPage() {
                           const x = 12 + i * (barW + gap)
                           const y = height - 3 - h
                           const accVal = r?.accuracy?.[monthOrderIdx[i]]
+                          const rawMinutesVal = r?.minutes?.[monthOrderIdx[i]]
                           const accText = category !== 'all' ? ` / 정확도 ${typeof accVal === 'number' ? accVal : '-'}%` : ''
                           const calVal = calData[i]
                           const calH = caloriesMax > 0 ? Math.round((calVal / caloriesMax) * (height - 6)) : 0
@@ -462,7 +463,7 @@ export default function ExercisesPage() {
                                           rx={1}
                                           style={{ fill: p.color }}
                                           opacity={(r?.minutes?.[monthOrderIdx[i]] ?? null) == null ? 0.25 : 1}
-                                          onMouseEnter={(e) => setTooltip({ x: e.clientX + 12, y: e.clientY + 12, content: `${num}. ${(s?.name) ?? '-'} · ${monthOrderIdx[i] + 1}월 ${p.label} ${p.h ? Math.round(total * (p.h / h)) : 0}분 / 총 ${v}분` })}
+                                          onMouseEnter={(e) => setTooltip({ x: e.clientX + 12, y: e.clientY + 12, content: `${num}. ${(s?.name) ?? '-'} · ${monthOrderIdx[i] + 1}월 ${p.label} ${(() => { const segVal = idx2 === 0 ? c1 : idx2 === 1 ? c2 : c3; return typeof segVal === 'number' ? segVal.toFixed(1) : '-' })()}분 / 총 ${typeof (r?.minutes?.[monthOrderIdx[i]]) === 'number' ? (r?.minutes?.[monthOrderIdx[i]] as number).toFixed(1) : '-'}분` })}
                                           onMouseMove={(e) => setTooltip((prev) => (prev ? { ...prev, x: e.clientX + 12, y: e.clientY + 12 } : prev))}
                                           onMouseLeave={() => setTooltip(null)}
                                         />
@@ -481,7 +482,7 @@ export default function ExercisesPage() {
                                   rx={1}
                                   className={'fill-indigo-400'}
                                   opacity={(r?.minutes?.[monthOrderIdx[i]] ?? null) == null ? 0.25 : 1}
-                                  onMouseEnter={(e) => setTooltip({ x: e.clientX + 12, y: e.clientY + 12, content: `${num}. ${(s?.name) ?? '-'} · ${monthOrderIdx[i] + 1}월 운동시간 ${v}분${accText}` })}
+                                  onMouseEnter={(e) => setTooltip({ x: e.clientX + 12, y: e.clientY + 12, content: `${num}. ${(s?.name) ?? '-'} · ${monthOrderIdx[i] + 1}월 운동시간 ${typeof rawMinutesVal === 'number' ? rawMinutesVal.toFixed(1) : '-'}분${accText}` })}
                                   onMouseMove={(e) => setTooltip((prev) => (prev ? { ...prev, x: e.clientX + 12, y: e.clientY + 12 } : prev))}
                                   onMouseLeave={() => setTooltip(null)}
                                 />

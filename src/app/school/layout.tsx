@@ -46,6 +46,24 @@ export default function SchoolLayout({ children }: { children: React.ReactNode }
     return () => { ignore = true }
   }, [])
 
+  // 관리자일 때 acting 컨텍스트 주기적 연장
+  useEffect(() => {
+    let timer: any
+    const refresh = async () => {
+      try {
+        await fetch('/api/admin/act-as', { method: 'POST', credentials: 'include' })
+      } catch {}
+    }
+    if (isAdmin) {
+      // 진입 즉시 1회 연장 후, 30분 주기로 연장
+      refresh()
+      timer = setInterval(refresh, 30 * 60 * 1000)
+    }
+    return () => {
+      if (timer) clearInterval(timer)
+    }
+  }, [isAdmin])
+
   const menuDevices = useMemo(() => devices, [devices])
   return (
     <SchoolRoute>

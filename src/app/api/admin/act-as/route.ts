@@ -41,14 +41,14 @@ export async function GET(req: NextRequest) {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
-    maxAge: 60 * 60, // 1시간
+    maxAge: 60 * 60 * 24 * 7, // 7일
     path: '/',
   })
   res.cookies.set('acting_group_no', String((school as any).group_no), {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
-    maxAge: 60 * 60,
+    maxAge: 60 * 60 * 24 * 7,
     path: '/',
   })
   return res
@@ -62,6 +62,35 @@ export async function DELETE(req: NextRequest) {
   const res = NextResponse.json({ success: true })
   res.cookies.set('acting_school_id', '', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 0, path: '/' })
   res.cookies.set('acting_group_no', '', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 0, path: '/' })
+  return res
+}
+
+// acting 연장: 현재 acting_* 쿠키가 있으면 동일 값으로 재설정하여 만료 갱신
+export async function POST(req: NextRequest) {
+  const auth = requireAdmin(req)
+  if ('error' in auth) return NextResponse.json({ error: auth.error }, { status: auth.status })
+
+  const actingSchoolId = req.cookies.get('acting_school_id')?.value
+  const actingGroupNo = req.cookies.get('acting_group_no')?.value
+  if (!actingSchoolId || !actingGroupNo) {
+    return NextResponse.json({ error: 'acting 컨텍스트가 없습니다.' }, { status: 400 })
+  }
+
+  const res = NextResponse.json({ success: true })
+  res.cookies.set('acting_school_id', String(actingSchoolId), {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 60 * 60 * 24 * 7,
+    path: '/',
+  })
+  res.cookies.set('acting_group_no', String(actingGroupNo), {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 60 * 60 * 24 * 7,
+    path: '/',
+  })
   return res
 }
 

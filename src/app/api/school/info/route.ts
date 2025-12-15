@@ -63,15 +63,23 @@ export async function GET(request: NextRequest) {
   const schoolId = auth.account.school_id as string
   const { data, error } = await supabaseAdmin
     .from('schools')
-    .select('id, name, group_no, school_type')
+    .select('id, name, group_no, school_type, recognition_key')
     .eq('id', schoolId)
-    .maybeSingle<Pick<import('@/types/database.types').Database['public']['Tables']['schools']['Row'], 'id' | 'name' | 'group_no' | 'school_type'>>()
+    .maybeSingle<Pick<import('@/types/database.types').Database['public']['Tables']['schools']['Row'], 'id' | 'name' | 'group_no' | 'school_type' | 'recognition_key'>>()
 
   if (error || !data) {
     return NextResponse.json({ error: error?.message || '학교 정보를 찾을 수 없습니다.' }, { status: 404 })
   }
 
-  return NextResponse.json({ school: { id: data.id, name: data.name, group_no: (data as any).group_no, school_type: (data as any).school_type } })
+  return NextResponse.json({
+    school: {
+      id: data.id,
+      name: data.name,
+      group_no: (data as any).group_no,
+      school_type: (data as any).school_type,
+      recognition_key: (data as any).recognition_key,
+    },
+  })
 }
 
 

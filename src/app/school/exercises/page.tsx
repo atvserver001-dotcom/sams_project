@@ -314,7 +314,9 @@ export default function ExercisesPage() {
                     <React.Fragment key={num}>
                       <tr className=" bg-gray-50">
                         <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 align-middle text-center" rowSpan={mergedRowSpan}>{num}</td>
-                        <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 align-middle text-center" rowSpan={mergedRowSpan}>{s ? s.name : '-'}</td>
+                        <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 align-middle text-center" rowSpan={mergedRowSpan}>
+                          {s ? s.name : `${num}번 학생`}
+                        </td>
                         <td className="px-2 py-2 whitespace-nowrap text-xs text-center text-indigo-700 font-semibold">운동시간</td>
                         {monthOrderIdx.map((origIdx, i) => {
                           const v = minutes[origIdx] as number | null
@@ -398,7 +400,9 @@ export default function ExercisesPage() {
               return (
                 <div key={num} className="border rounded-lg p-3 bg-white">
                   <div className="flex items-center justify-between mb-2">
-                    <div className="text-sm font-semibold text-gray-900">{num}. {s ? s.name : '-'}</div>
+                    <div className="text-sm font-semibold text-gray-900">
+                      {num}. {s ? s.name : `${num}번 학생`}
+                    </div>
                     
                   </div>
                   <div className="flex items-center gap-10 justify-center">

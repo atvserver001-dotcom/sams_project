@@ -112,7 +112,7 @@ export default function StudentsPage() {
       grade,
       class_no: classNo,
       student_no: studentNo,
-      name: '',
+      name: `${studentNo}번 학생`,
       gender: null,
       birth_date: '',
       email: '',
@@ -220,16 +220,9 @@ export default function StudentsPage() {
                         <div className="flex gap-1 justify-end">
                           <button
                             onClick={() => openEdit(s)}
-                            className="px-2 py-1 rounded border 
-                            border-green-300 text-green-700 hover:bg-green-100"
+                            className="px-2 py-1 rounded border border-green-300 text-green-700 hover:bg-green-100"
                           >
                             수정
-                          </button>
-                          <button
-                            onClick={() => handleDelete(s.id)}
-                            className="px-2 py-1 rounded border border-red-300 text-red-700 hover:bg-red-50"
-                          >
-                            삭제
                           </button>
                         </div>
                       </td>
@@ -239,7 +232,7 @@ export default function StudentsPage() {
                 return (
                   <tr key={num} className="hover:bg-gray-50">
                     <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">{num}</td>
-                    <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-400">-</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">{`${num}번 학생`}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-400">-</td>
                     <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-400">-</td>
                     <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-400">-</td>
@@ -250,9 +243,9 @@ export default function StudentsPage() {
                       <div className="flex gap-1 justify-end">
                         <button
                           onClick={() => openCreateWithNumber(num)}
-                          className="px-2 py-1 rounded border border-indigo-300 text-indigo-700 hover:bg-indigo-50"
+                          className="px-2 py-1 rounded border border-green-300 text-green-700 hover:bg-green-100"
                         >
-                          추가
+                          수정
                         </button>
                       </div>
                     </td>
@@ -321,8 +314,6 @@ function StudentDialog({ open, onClose, initial, year, grade, classNo, onSaved }
     notes: initial?.notes ?? '',
   })
 
-  const isCreateWithFixedNumber = initial != null && initial.id === '' && initial.student_no != null
-
   useEffect(() => {
     setForm((prev) => ({ ...prev, year, grade, class_no: classNo }))
   }, [year, grade, classNo])
@@ -382,21 +373,6 @@ function StudentDialog({ open, onClose, initial, year, grade, classNo, onSaved }
       return
     }
 
-    // 수정 시 번호 중복 방지: 동일 학년도+반에서만 체크
-    if (isEdit) {
-      const newNo = parsedNo
-      if (Number.isFinite(parsedNo)) {
-        const dupSameYear = await fetch(`/api/school/students?year=${year}&grade=${grade}&class_no=${classNo}`, { credentials: 'include' })
-          .then(r => r.json())
-          .then(d => (d.students as any[] || []).some((st: any) => st.student_no === newNo && st.id !== (initial as any).id))
-          .catch(() => false)
-        if (dupSameYear) {
-          alert('해당 번호에 존재하는 학생데이터가 있습니다.')
-          return
-        }
-      }
-    }
-
     const payload = {
       year: Number(form.year),
       grade: Number(form.grade),
@@ -411,9 +387,142 @@ function StudentDialog({ open, onClose, initial, year, grade, classNo, onSaved }
       notes: form.notes || null,
     }
 
+    // 번호 변경 여부 (기존 번호가 있었을 때만 비교)
+    const originalNo = initial && initial.student_no != null ? initial.student_no : null
+    const numberChanged = originalNo != null && originalNo !== parsedNo
+
+    // 번호가 변경되고, 수정 모드일 때에는 충돌 번호가 있어도 "이동" 되도록 처리
+    if (isEdit && numberChanged && initial) {
+      // 현재 학급의 학생 목록 조회
+      let list: any[] = []
+      try {
+        const listRes = await fetch(`/api/school/students?year=${year}&grade=${grade}&class_no=${classNo}`, { credentials: 'include' })
+        const listData = await listRes.json().catch(() => ({}))
+        list = Array.isArray(listData.students) ? listData.students : []
+      } catch {
+        list = []
+      }
+
+      const currentId = (initial as any).id
+      const target = list.find((st: any) => st.student_no === parsedNo && st.id !== currentId) || null
+
+      if (target) {
+        // 대상 번호에 이미 학생이 있는 경우: 번호 스왑 처리
+        // 1) 사용 가능한 임시 번호(buffer)를 찾는다 (1~50 범위)
+        let bufferNo: number | null = null
+        for (let n = 1; n <= 50; n++) {
+          if (!list.some((st: any) => st.student_no === n)) {
+            bufferNo = n
+            break
+          }
+        }
+
+        if (bufferNo == null) {
+          alert('번호를 이동할 수 없습니다. (사용 가능한 번호가 없습니다.)')
+          return
+        }
+
+        // 2) 대상 학생을 buffer 번호로 이동
+        const patchTargetToBuffer = await fetch(`/api/school/students/${target.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ student_no: bufferNo }),
+          credentials: 'include',
+        }).then(r => r.json().then(d => ({ ok: r.ok, data: d })).catch(() => ({ ok: r.ok, data: {} })))
+
+        if (!patchTargetToBuffer.ok) {
+          alert(patchTargetToBuffer.data?.error || '번호 이동 중 오류가 발생했습니다. (1단계)')
+          return
+        }
+
+        // 3) 현재 학생을 새로운 번호(parsedNo)로 이동
+        const patchCurrentToNew = await fetch(`/api/school/students/${currentId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          credentials: 'include',
+        }).then(r => r.json().then(d => ({ ok: r.ok, data: d })).catch(() => ({ ok: r.ok, data: {} })))
+
+        if (!patchCurrentToNew.ok) {
+          alert(patchCurrentToNew.data?.error || '번호 이동 중 오류가 발생했습니다. (2단계)')
+          return
+        }
+
+        // 4) 대상 학생을 원래 번호(originalNo)로 이동
+        const patchTargetToOriginal = await fetch(`/api/school/students/${target.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ student_no: originalNo }),
+          credentials: 'include',
+        }).then(r => r.json().then(d => ({ ok: r.ok, data: d })).catch(() => ({ ok: r.ok, data: {} })))
+
+        if (!patchTargetToOriginal.ok) {
+          alert(patchTargetToOriginal.data?.error || '번호 이동 중 오류가 발생했습니다. (3단계)')
+          return
+        }
+
+        // 성공 안내 팝업
+        alert(`번호 변경을 하였습니다.\n${parsedNo} 번의 데이터는 ${originalNo} 번이 됩니다.`)
+        await onSaved()
+        return
+      }
+    }
+
+    // 신규 생성(학생데이터가 없던 번호에서 시작) + 번호 변경인 경우에도
+    // 대상 번호에 학생이 있으면 스왑되도록 처리
+    if (!isEdit && numberChanged && originalNo != null) {
+      let list: any[] = []
+      try {
+        const listRes = await fetch(`/api/school/students?year=${year}&grade=${grade}&class_no=${classNo}`, { credentials: 'include' })
+        const listData = await listRes.json().catch(() => ({}))
+        list = Array.isArray(listData.students) ? listData.students : []
+      } catch {
+        list = []
+      }
+
+      const target = list.find((st: any) => st.student_no === parsedNo) || null
+
+      if (target) {
+        // 1) 대상 학생을 원래 번호(originalNo)로 이동
+        const patchTargetToOriginal = await fetch(`/api/school/students/${target.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ student_no: originalNo }),
+          credentials: 'include',
+        }).then(r => r.json().then(d => ({ ok: r.ok, data: d })).catch(() => ({ ok: r.ok, data: {} })))
+
+        if (!patchTargetToOriginal.ok) {
+          alert(patchTargetToOriginal.data?.error || '번호 이동 중 오류가 발생했습니다. (대상 이동)')
+          return
+        }
+
+        // 2) 새 학생을 변경된 번호(parsedNo)로 생성
+        const createNew = await fetch('/api/school/students', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          credentials: 'include',
+        }).then(r => r.json().then(d => ({ ok: r.ok, data: d })).catch(() => ({ ok: r.ok, data: {} })))
+
+        if (!createNew.ok) {
+          alert(createNew.data?.error || '번호 이동 중 오류가 발생했습니다. (신규 생성)')
+          return
+        }
+
+        alert(`번호 변경을 하였습니다.\n${parsedNo} 번의 데이터는 ${originalNo} 번이 됩니다.`)
+        await onSaved()
+        return
+      }
+    }
+
+    // 여기까지 왔다는 것은
+    // 1) 신규 생성이거나
+    // 2) 번호 변경이 없거나
+    // 3) 번호 변경이지만 대상 번호에 학생이 없어서 단순 PATCH/POST & placeholder 처리만 하면 되는 경우
+
     let res: Response
-    if (isEdit) {
-      res = await fetch(`/api/school/students/${initial!.id}`, {
+    if (isEdit && initial) {
+      res = await fetch(`/api/school/students/${initial.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -434,7 +543,63 @@ function StudentDialog({ open, onClose, initial, year, grade, classNo, onSaved }
       return
     }
 
+    // 번호만 이동하는 경우(대상 번호가 비어 있던 경우): 원래 번호 자리에 placeholder 학생 생성
+    if (numberChanged && originalNo != null) {
+      alert(`번호 변경을 하였습니다.\n${parsedNo} 번의 데이터는 ${originalNo} 번이 됩니다.`)
+
+      try {
+        const placeholderPayload = {
+          year: Number(form.year),
+          grade: Number(form.grade),
+          class_no: Number(form.class_no),
+          student_no: originalNo,
+          // 이동 "당한" 번호(원래 비어있던 번호)를 그대로 유지하기 위해
+          // placeholder의 이름은 변경 후 번호(parsedNo)를 기준으로 표시
+          // 예) 5번 홍길동 -> 6번으로 이동 시, 5번 자리에 "6번 학생" 생성
+          name: `${parsedNo}번 학생`,
+          gender: null,
+          birth_date: null,
+          email: null,
+          height_cm: null,
+          weight_kg: null,
+          notes: null,
+        }
+
+        await fetch('/api/school/students', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(placeholderPayload),
+          credentials: 'include',
+        }).then(r => r.json().catch(() => ({})))
+        // 이미 존재(중복키)하는 경우 등은 조용히 무시
+      } catch {
+        // 보조 처리 실패는 전체 저장 실패로 보지 않음
+      }
+    }
+
     await onSaved()
+  }
+
+  const handleDeleteAll = async () => {
+    if (!isEdit || !initial) return
+    const confirmed = confirm('해당 학생의 학생 데이터와 관련 운동기록이 모두 삭제됩니다.\n정말 삭제하시겠습니까?')
+    if (!confirmed) return
+
+    try {
+      const res = await fetch(`/api/school/students/${initial.id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        alert(data.error || '삭제 중 오류가 발생했습니다.')
+        return
+      }
+      alert('학생 데이터와 관련 운동기록이 모두 삭제되었습니다.')
+      await onSaved()
+    } catch {
+      alert('삭제 중 알 수 없는 오류가 발생했습니다.')
+    }
   }
 
   if (!open) return null
@@ -455,7 +620,16 @@ function StudentDialog({ open, onClose, initial, year, grade, classNo, onSaved }
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">번호</label>
-            <input name="student_no" value={form.student_no} onChange={(e) => handleIntChange('student_no', e.target.value)} type="text" inputMode="numeric" pattern="[0-9]*" maxLength={2} className="w-full h-10 px-3 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm disabled:bg-gray-100" disabled={isCreateWithFixedNumber} />
+            <input
+              name="student_no"
+              value={form.student_no}
+              onChange={(e) => handleIntChange('student_no', e.target.value)}
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={2}
+              className="w-full h-10 px-3 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
+            />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">이름</label>
@@ -491,9 +665,22 @@ function StudentDialog({ open, onClose, initial, year, grade, classNo, onSaved }
           </div>
         </div>
 
-        <div className="mt-6 flex justify-end gap-2">
-          <button onClick={onClose} className="px-4 py-2 rounded border border-gray-300 hover:bg-gray-50">취소</button>
-          <button onClick={submit} className="px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700">저장</button>
+        <div className="mt-6 flex items-center justify-between gap-2">
+          <div>
+            {isEdit && initial && (
+              <button
+                type="button"
+                onClick={handleDeleteAll}
+                className="px-4 py-2 rounded bg-[#cc1212] text-white hover:bg-[#a80000] text-sm font-semibold"
+              >
+                데이터 삭제
+              </button>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="px-4 py-2 rounded border border-gray-300 hover:bg-gray-50">취소</button>
+            <button onClick={submit} className="px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700">저장</button>
+          </div>
         </div>
       </div>
     </div>

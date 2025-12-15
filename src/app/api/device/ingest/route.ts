@@ -69,6 +69,65 @@ function validateItem(it: any): { ok: true; item: IngestItem } | { ok: false; me
   return { ok: true, item }
 }
 
+async function ensureStudentExistsForItem(it: IngestItem) {
+  // recognition_key 로 학교 조회
+  const { data: school, error: schoolError } = await (supabaseAdmin
+    .from('schools') as any)
+    .select('id')
+    .eq('recognition_key', it.recognition_key)
+    .maybeSingle()
+
+  if (schoolError || !school) {
+    return { ok: false as const, message: '유효하지 않은 recognition_key 입니다.' }
+  }
+
+  // 이미 존재하는지 먼저 조회 (중복 방지)
+  const { data: existing, error: selectError } = await (supabaseAdmin
+    .from('students') as any)
+    .select('id')
+    .eq('school_id', school.id)
+    .eq('year', it.year)
+    .eq('grade', it.grade)
+    .eq('class_no', it.class_no)
+    .eq('student_no', it.student_no)
+    .maybeSingle()
+
+  if (selectError) {
+    return { ok: false as const, message: selectError.message || '학생 조회 중 오류가 발생했습니다.' }
+  }
+
+  if (existing) {
+    // 이미 학생이 있으면 그대로 사용
+    return { ok: true as const }
+  }
+
+  const payload = {
+    school_id: school.id,
+    year: it.year,
+    grade: it.grade,
+    class_no: it.class_no,
+    student_no: it.student_no,
+    // 디바이스에서 온 학생 기본 이름: "x번 학생"
+    name: `${it.student_no}번 학생`,
+  }
+
+  const { error: insertError } = await (supabaseAdmin
+    .from('students') as any)
+    .insert(payload)
+
+  if (insertError) {
+    const code = (insertError as any).code || ''
+    const message = (insertError as any).message || ''
+    // 유니크 인덱스가 있는 경우, 동시 요청에서 중복이 나도 OK 로 처리
+    if (code === '23505' || message.includes('duplicate key value violates unique constraint')) {
+      return { ok: true as const }
+    }
+    return { ok: false as const, message: message || '학생 정보 저장 중 오류가 발생했습니다.' }
+  }
+
+  return { ok: true as const }
+}
+
 export async function POST(request: NextRequest) {
   // 디바이스 토큰 검증 제거: 누구나 호출 가능
 
@@ -94,6 +153,14 @@ export async function POST(request: NextRequest) {
       validated.push(v.item)
     }
 
+    // 각 레코드에 대해 학생이 없으면 기본값으로 학생을 먼저 업서트
+    for (const it of validated) {
+      const ensured = await ensureStudentExistsForItem(it)
+      if (!ensured.ok) {
+        return NextResponse.json({ error: ensured.message }, { status: 400 })
+      }
+    }
+
     const { data, error } = await (supabaseAdmin as any).rpc('upsert_exercise_records_batch', {
       p_items: validated,
     })
@@ -107,6 +174,12 @@ export async function POST(request: NextRequest) {
   const v = validateItem(body)
   if (!v.ok) return NextResponse.json({ error: v.message }, { status: 400 })
   const it = v.item
+
+  // 단건에서도 학생이 없으면 기본값으로 학생을 먼저 업서트
+  const ensured = await ensureStudentExistsForItem(it)
+  if (!ensured.ok) {
+    return NextResponse.json({ error: ensured.message }, { status: 400 })
+  }
 
   const { data, error } = await (supabaseAdmin as any).rpc('upsert_exercise_record_by_key_idem', {
     p_idempotency_key: it.idempotency_key,

@@ -16,7 +16,7 @@ export type ExerciseType =
 // 데이터베이스 테이블 타입
 // ====================================
 
-export interface School {
+export interface School extends Record<string, unknown> {
   id: string;
   group_no: string; // 4자리 숫자 문자열 (도메인 PK), 실제 DB PK는 id(uuid)
   name: string;
@@ -26,7 +26,7 @@ export interface School {
   created_at: string;
 }
 
-export interface Device {
+export interface Device extends Record<string, unknown> {
   id: string;
   device_name: string;
   sort_order?: number;
@@ -34,7 +34,7 @@ export interface Device {
   icon_path?: string | null; // Supabase Storage 경로 (예: device-icons/devices/{id}/...)
 }
 
-export interface DeviceManagement {
+export interface DeviceManagement extends Record<string, unknown> {
   id: string;
   school_id: string; // schools.id FK
   device_id: string; // devices.id FK
@@ -44,7 +44,40 @@ export interface DeviceManagement {
   created_at: string;
 }
 
-export interface Student {
+export interface Content extends Record<string, unknown> {
+  id: string
+  name: string
+  description: string | null
+  color_hex: string
+  created_at: string
+}
+
+export interface ContentDevice extends Record<string, unknown> {
+  content_id: string
+  device_id: string
+  created_at?: string
+}
+
+export interface SchoolContent extends Record<string, unknown> {
+  id: string
+  school_id: string
+  content_id: string
+  start_date: string | null
+  end_date: string | null
+  is_unlimited: boolean
+  created_at: string
+}
+
+export interface SchoolDevice extends Record<string, unknown> {
+  id: string
+  school_content_id: string
+  device_id: string
+  auth_key: string
+  memo: string | null
+  created_at: string
+}
+
+export interface Student extends Record<string, unknown> {
   id: string;
   school_id: string;
   year: number; // 학년도 (예: 2025)
@@ -62,7 +95,7 @@ export interface Student {
   updated_at: string;
 }
 
-export interface Grade {
+export interface Grade extends Record<string, unknown> {
   id: string;
   school_id: string;
   grade_number: number; // 1-12
@@ -70,7 +103,7 @@ export interface Grade {
   created_at: string;
 }
 
-export interface Class {
+export interface Class extends Record<string, unknown> {
   id: string;
   grade_id: string;
   class_number: number;
@@ -78,7 +111,7 @@ export interface Class {
   created_at: string;
 }
 
-export interface UserProfile {
+export interface UserProfile extends Record<string, unknown> {
   id: string;
   email: string;
   full_name: string;
@@ -95,7 +128,7 @@ export interface UserProfile {
 }
 
 // 폐기: 레거시 기록 단건 테이블 타입 (현재 프로젝트에선 사용하지 않음)
-export interface ExerciseRecord {
+export interface ExerciseRecord extends Record<string, unknown> {
   id: string;
   student_id: string;
   exercise_type: ExerciseType; // 'endurance' | 'flexibility' | 'strength'
@@ -111,7 +144,7 @@ export interface ExerciseRecord {
   updated_at: string;
 }
 
-export interface PermissionLog {
+export interface PermissionLog extends Record<string, unknown> {
   id: string;
   grantor_id?: string;
   grantee_id: string;
@@ -121,7 +154,7 @@ export interface PermissionLog {
 }
 
 // 운영 계정 테이블 타입
-export interface OperatorAccount {
+export interface OperatorAccount extends Record<string, unknown> {
   id: string;
   username: string;
   password: string; // 요구사항상 평문 저장
@@ -136,7 +169,7 @@ export interface OperatorAccount {
 // 뷰(View) 타입
 // ====================================
 
-export interface StudentDetail {
+export interface StudentDetail extends Record<string, unknown> {
   id: string;
   email: string;
   full_name: string;
@@ -149,7 +182,7 @@ export interface StudentDetail {
   is_active: boolean;
 }
 
-export interface ExerciseStatistics {
+export interface ExerciseStatistics extends Record<string, unknown> {
   user_id: string;
   full_name: string;
   student_number?: number;
@@ -334,11 +367,13 @@ export interface Database {
           recognition_key: string;
           device_ids?: string[];
         }>;
+        Relationships: [];
       };
       devices: {
         Row: Device;
         Insert: Omit<Device, 'id'>;
         Update: Partial<Device>;
+        Relationships: [];
       };
       device_management: {
         Row: DeviceManagement;
@@ -356,49 +391,123 @@ export interface Database {
           end_date?: string | null;
           limited_period?: boolean;
         }>;
+        Relationships: [];
       };
       grades: {
         Row: Grade;
         Insert: Omit<Grade, 'id' | 'created_at'>;
         Update: Partial<Omit<Grade, 'id' | 'created_at'>>;
+        Relationships: [];
       };
       classes: {
         Row: Class;
         Insert: Omit<Class, 'id' | 'created_at'>;
         Update: Partial<Omit<Class, 'id' | 'created_at'>>;
+        Relationships: [];
       };
       user_profiles: {
         Row: UserProfile;
         Insert: Omit<UserProfile, 'created_at' | 'updated_at'>;
         Update: Partial<Omit<UserProfile, 'id' | 'created_at'>>;
+        Relationships: [];
       };
       exercise_records: {
         Row: ExerciseRecord;
         Insert: Omit<ExerciseRecord, 'id' | 'created_at' | 'updated_at'>;
         Update: Partial<Omit<ExerciseRecord, 'id' | 'created_at'>>;
+        Relationships: [];
       };
       permission_logs: {
         Row: PermissionLog;
         Insert: Omit<PermissionLog, 'id' | 'created_at'>;
-        Update: never;
+        Update: Record<string, never>;
+        Relationships: [];
       };
       operator_accounts: {
         Row: OperatorAccount;
         Insert: Omit<OperatorAccount, 'id' | 'created_at' | 'updated_at'>;
         Update: Partial<Omit<OperatorAccount, 'id' | 'created_at'>>;
+        Relationships: [];
       };
       students: {
         Row: Student;
         Insert: Omit<Student, 'id' | 'created_at' | 'updated_at'>;
         Update: Partial<Omit<Student, 'id' | 'created_at'>>;
+        Relationships: [];
       };
+
+      contents: {
+        Row: Content
+        Insert: {
+          name: string
+          description?: string | null
+          color_hex?: string
+        }
+        Update: Partial<{
+          name: string
+          description: string | null
+          color_hex: string
+        }>
+        Relationships: []
+      }
+
+      content_devices: {
+        Row: ContentDevice
+        Insert: {
+          content_id: string
+          device_id: string
+        }
+        Update: Record<string, never>
+        Relationships: []
+      }
+
+      school_contents: {
+        Row: SchoolContent
+        Insert: {
+          school_id: string
+          content_id: string
+          start_date?: string | null
+          end_date?: string | null
+          is_unlimited?: boolean
+        }
+        Update: Partial<{
+          school_id: string
+          content_id: string
+          start_date: string | null
+          end_date: string | null
+          is_unlimited: boolean
+        }>
+        Relationships: []
+      }
+
+      school_devices: {
+        Row: SchoolDevice
+        Insert: {
+          school_content_id: string
+          device_id: string
+          auth_key: string
+          memo?: string | null
+        }
+        Update: Partial<{
+          device_id: string
+          auth_key: string
+          memo: string | null
+        }>
+        Relationships: []
+      }
     };
     Views: {
       student_details: {
         Row: StudentDetail;
+        Insert: never;
+        Update: never;
+        Relationships: [];
       };
       exercise_statistics: {
         Row: ExerciseStatistics;
+        Insert: never;
+        Update: never;
+        Relationships: [];
       };
     };
     Functions: {
@@ -431,6 +540,9 @@ export interface Database {
       user_role: UserRole;
       exercise_type: ExerciseType;
       operator_role: OperatorRole;
+    };
+    CompositeTypes: {
+      [_ in never]: never;
     };
   };
 }

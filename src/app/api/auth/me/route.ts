@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import jwt from 'jsonwebtoken'
 import { supabaseAdmin } from '@/lib/supabase'
-import type { Database } from '@/types/database.types'
+import type { TableRow } from '@/types/supabaseHelpers'
 
 export async function GET(request: NextRequest) {
   try {
@@ -22,14 +22,16 @@ export async function GET(request: NextRequest) {
     }
 
     try {
-      const decoded = jwt.verify(accessToken, jwtSecret) as any
+      const decoded = jwt.verify(accessToken, jwtSecret) as jwt.JwtPayload
+      const userId = decoded.sub
+      if (!userId) return NextResponse.json({ error: '유효하지 않은 세션입니다.' }, { status: 401 })
 
       // operator_accounts에서 최신 상태 조회
       const { data: account, error } = await supabaseAdmin
         .from('operator_accounts')
         .select('id, username, role, school_id, is_active')
-        .eq('id', decoded.sub)
-        .single<Database['public']['Tables']['operator_accounts']['Row']>()
+        .eq('id', userId)
+        .single<Pick<TableRow<'operator_accounts'>, 'id' | 'username' | 'role' | 'school_id' | 'is_active'>>()
 
       if (error || !account) {
         return NextResponse.json({ error: '사용자를 찾을 수 없습니다.' }, { status: 404 })
@@ -51,7 +53,7 @@ export async function GET(request: NextRequest) {
         },
         { status: 200 }
       )
-    } catch (e) {
+    } catch {
       return NextResponse.json({ error: '유효하지 않은 세션입니다.' }, { status: 401 })
     }
 

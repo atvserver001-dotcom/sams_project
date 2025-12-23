@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 
 type OperatorRole = 'admin' | 'school'
@@ -24,7 +24,6 @@ export default function AccountsPage() {
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
   const pageSize = 10
-  const [total, setTotal] = useState(0)
   const [error, setError] = useState<string>('')
   const [schoolMap, setSchoolMap] = useState<SchoolBriefMap>({})
 
@@ -45,7 +44,7 @@ export default function AccountsPage() {
   const [groupNoQuery, setGroupNoQuery] = useState('')
   const [schoolNameQuery, setSchoolNameQuery] = useState('')
 
-  const fetchList = async () => {
+  const fetchList = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
@@ -54,13 +53,12 @@ export default function AccountsPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || '목록 조회 실패')
       setItems(data.items)
-      setTotal(data.total || 0)
     } catch (e: any) {
       setError(e.message || '목록 조회 실패')
     } finally {
       setLoading(false)
     }
-  }
+  }, [page, pageSize])
 
   const fetchSchools = async () => {
     try {
@@ -74,14 +72,14 @@ export default function AccountsPage() {
         }
       }
       setSchoolMap(map)
-    } catch (e) {
+    } catch {
       // 학교 정보가 없어도 계정 목록은 보여야 하므로 오류는 조용히 무시
     }
   }
 
   useEffect(() => {
     if (isAdmin) fetchList()
-  }, [isAdmin, page])
+  }, [isAdmin, fetchList])
 
   useEffect(() => {
     if (isAdmin) fetchSchools()

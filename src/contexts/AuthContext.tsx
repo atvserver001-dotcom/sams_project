@@ -1,6 +1,6 @@
 'use client'
 
-import React, { createContext, useContext, useEffect, useState } from 'react'
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react'
 
 type OperatorRole = 'admin' | 'school'
 
@@ -30,7 +30,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [schoolName, setSchoolName] = useState<string | null>(null)
 
-  const fetchSchoolInfo = async () => {
+  const fetchSchoolInfo = useCallback(async () => {
     try {
       const res = await fetch('/api/school/info', { credentials: 'include' })
       if (!res.ok) return setSchoolName(null)
@@ -39,9 +39,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch {
       setSchoolName(null)
     }
-  }
+  }, [])
 
-  const refreshUser = async () => {
+  const refreshUser = useCallback(async () => {
     try {
       const response = await fetch('/api/auth/me', {
         method: 'GET',
@@ -65,7 +65,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(null)
       setSchoolName(null)
     }
-  }
+  }, [fetchSchoolInfo])
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -74,7 +74,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     checkAuth()
-  }, [])
+  }, [refreshUser])
 
   const signIn = async (username: string, password: string) => {
     try {

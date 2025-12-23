@@ -1,21 +1,8 @@
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
-import jwt from 'jsonwebtoken'
 import { supabaseAdmin } from '@/lib/supabase'
-
-function requireAdmin(req: NextRequest) {
-  const token = req.cookies.get('op-access-token')?.value
-  const jwtSecret = process.env.JWT_SECRET
-  if (!token || !jwtSecret) return { error: 'Unauthorized', status: 401 as const }
-  try {
-    const decoded = jwt.verify(token, jwtSecret) as any
-    if ((decoded as any).role !== 'admin') return { error: 'Forbidden', status: 403 as const }
-    return { decoded }
-  } catch (e) {
-    return { error: 'Invalid token', status: 401 as const }
-  }
-}
+import { requireAdmin } from '@/lib/apiAuth'
 
 // GET: 학교 세부정보 목록 (페이징)
 export async function GET(req: NextRequest) {
@@ -42,14 +29,13 @@ export async function GET(req: NextRequest) {
   // 2) 교사 계정 수 집계
   let teacherCountBySchoolId = new Map<string, number>()
   if (schoolIds.length) {
-    const { data: accounts, error: accErr } = await supabaseAdmin
-      .from('operator_accounts')
+    const { data: accounts, error: accErr } = await (supabaseAdmin.from('operator_accounts') as any)
       .select('school_id, role')
       .in('school_id', schoolIds)
       .eq('role', 'school')
 
     if (!accErr) {
-      for (const r of accounts) {
+      for (const r of (accounts ?? []) as Array<{ school_id: string | null }>) {
         if (r.school_id) {
           teacherCountBySchoolId.set(r.school_id, (teacherCountBySchoolId.get(r.school_id) || 0) + 1)
         }
@@ -60,24 +46,25 @@ export async function GET(req: NextRequest) {
   // 3) 제품 구성(디바이스) 수 집계: school_contents -> school_devices
   let deviceCountBySchoolId = new Map<string, number>()
   if (schoolIds.length) {
-    const { data: schoolContents, error: scErr } = await supabaseAdmin
-      .from('school_contents')
+    const { data: schoolContents, error: scErr } = await (supabaseAdmin.from('school_contents') as any)
       .select('id, school_id')
       .in('school_id', schoolIds)
 
-    if (!scErr && schoolContents.length > 0) {
-      const scIds = schoolContents.map(sc => sc.id)
-      const { data: devices, error: devErr } = await supabaseAdmin
-        .from('school_devices')
+    const schoolContentsArr = (schoolContents ?? []) as Array<{ id: string; school_id: string }>
+
+    if (!scErr && schoolContentsArr.length > 0) {
+      const scIds = schoolContentsArr.map((sc) => sc.id)
+      const { data: devices, error: devErr } = await (supabaseAdmin.from('school_devices') as any)
         .select('school_content_id')
         .in('school_content_id', scIds)
 
       if (!devErr) {
+        const devicesArr = (devices ?? []) as Array<{ school_content_id: string }>
         // school_content_id -> school_id 매핑 필요
         const scToSchool = new Map<string, string>()
-        schoolContents.forEach(sc => scToSchool.set(sc.id, sc.school_id))
+        schoolContentsArr.forEach((sc) => scToSchool.set(sc.id, sc.school_id))
 
-        for (const d of devices) {
+        for (const d of devicesArr) {
           const sid = scToSchool.get(d.school_content_id)
           if (sid) {
             deviceCountBySchoolId.set(sid, (deviceCountBySchoolId.get(sid) || 0) + 1)

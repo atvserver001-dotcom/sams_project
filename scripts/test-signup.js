@@ -1,4 +1,5 @@
 // Local signup test using supabase-js
+/* eslint-disable @typescript-eslint/no-require-imports */
 require('dotenv').config({ path: '.env.local' })
 const { createClient } = require('@supabase/supabase-js')
 

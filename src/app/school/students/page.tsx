@@ -1,7 +1,6 @@
 "use client"
 
-import React, { useEffect, useMemo, useState } from 'react'
-import { useAuth } from '@/contexts/AuthContext'
+import React, { useCallback, useEffect, useState } from 'react'
 
 type Gender = 'M' | 'F'
 
@@ -21,7 +20,6 @@ interface StudentRow {
 }
 
 export default function StudentsPage() {
-  const { user } = useAuth()
   const [grade, setGrade] = useState<number>(1)
   const [classNo, setClassNo] = useState<number>(1)
   // 학년도: 3~12월은 해당 연도, 1~2월은 전년도
@@ -33,7 +31,6 @@ export default function StudentsPage() {
   const [year, setYear] = useState<number>(computeDefaultYear())
   const [schoolType, setSchoolType] = useState<1 | 2 | 3>(1)
   const [students, setStudents] = useState<StudentRow[]>([])
-  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -62,9 +59,8 @@ export default function StudentsPage() {
   }, [])
 
  
-  const fetchStudents = async () => {
+  const fetchStudents = useCallback(async () => {
     try {
-      setLoading(true)
       setError(null)
       const res = await fetch(`/api/school/students?year=${year}&grade=${grade}&class_no=${classNo}`, { credentials: 'include' })
       const data = await res.json()
@@ -73,37 +69,20 @@ export default function StudentsPage() {
     } catch (e: any) {
       setError(e.message)
     } finally {
-      setLoading(false)
     }
-  }
+  }, [year, grade, classNo])
 
   
 
   useEffect(() => {
     fetchStudents()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [year, grade, classNo])
-
-  const openCreate = () => {
-    setEditTarget(null)
-    setDialogOpen(true)
-  }
+  }, [fetchStudents])
 
   const openEdit = (row: StudentRow) => {
     setEditTarget(row)
     setDialogOpen(true)
   }
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('정말 삭제하시겠습니까?')) return
-    const res = await fetch(`/api/school/students/${id}`, { method: 'DELETE', credentials: 'include' })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) {
-      alert(data.error || '삭제 실패')
-      return
-    }
-    await fetchStudents()
-  }
 
   const openCreateWithNumber = (studentNo: number) => {
     setEditTarget({

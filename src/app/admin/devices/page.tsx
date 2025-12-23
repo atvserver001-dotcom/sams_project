@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 
 interface DeviceRow { id: string; device_name: string; sort_order?: number | null; icon_url?: string | null; icon_path?: string | null }

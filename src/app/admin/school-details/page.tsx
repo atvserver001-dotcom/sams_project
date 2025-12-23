@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 
 interface SchoolDetailItem {
@@ -20,7 +20,7 @@ export default function SchoolDetailsPage() {
   const [total, setTotal] = useState(0)
   const [error, setError] = useState<string>('')
 
-  const fetchList = async () => {
+  const fetchList = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
@@ -35,11 +35,11 @@ export default function SchoolDetailsPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [page, pageSize])
 
   useEffect(() => {
     if (isAdmin) fetchList()
-  }, [isAdmin, page])
+  }, [isAdmin, fetchList])
 
   const rows = useMemo(() => items.map((item) => item), [items])
 

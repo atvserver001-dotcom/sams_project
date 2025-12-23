@@ -1,28 +1,20 @@
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
-import jwt from 'jsonwebtoken'
 import { supabaseAdmin } from '@/lib/supabase'
-
-function requireAdmin(req: NextRequest) {
-  const token = req.cookies.get('op-access-token')?.value
-  const jwtSecret = process.env.JWT_SECRET
-  if (!token || !jwtSecret) return { error: 'Unauthorized', status: 401 as const }
-  try {
-    const decoded = jwt.verify(token, jwtSecret) as any
-    if ((decoded as any).role !== 'admin') return { error: 'Forbidden', status: 403 as const }
-    return { decoded }
-  } catch (e) {
-    return { error: 'Invalid token', status: 401 as const }
-  }
-}
+import type { TableInsert, TableRow } from '@/types/supabaseHelpers'
+import { requireAdmin } from '@/lib/apiAuth'
 
 // GET: 컨텐츠 목록 (소속 디바이스 포함)
 export async function GET(req: NextRequest) {
   const auth = requireAdmin(req)
   if ('error' in auth) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
-  const { data, error } = await (supabaseAdmin as any)
+  type ContentWithDevices = TableRow<'contents'> & {
+    content_devices: { device_id: string; device?: { device_name: string | null } | null }[] | null
+  }
+
+  const { data, error } = await supabaseAdmin
     .from('contents')
     .select(`
       id,
@@ -36,13 +28,14 @@ export async function GET(req: NextRequest) {
       )
     `)
     .order('created_at', { ascending: false })
+    .returns<ContentWithDevices[]>()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   // 데이터 가공: content_devices를 단순 id 배열이나 객체 배열로 변환
-  const items = (data || []).map(item => ({
+  const items = (data ?? []).map((item) => ({
     ...item,
-    devices: (item.content_devices || []).map((cd: any) => ({
+    devices: (item.content_devices || []).map((cd) => ({
       id: cd.device_id,
       name: cd.device?.device_name
     }))
@@ -64,9 +57,11 @@ export async function POST(req: NextRequest) {
   }
 
   // 1. 컨텐츠 생성
-  const { data: content, error: contentError } = await ((supabaseAdmin as any)
-    .from('contents') as any)
-    .insert({ name: name.trim(), description, color_hex: (color_hex || '#DBEAFE') })
+  const payload: TableInsert<'contents'> = { name: name.trim(), description, color_hex: (color_hex || '#DBEAFE') }
+
+  const { data: content, error: contentError } = await supabaseAdmin
+    .from('contents')
+    .insert(payload)
     .select()
     .single()
 
@@ -74,13 +69,11 @@ export async function POST(req: NextRequest) {
 
   // 2. 디바이스 연결
   if (device_ids && device_ids.length > 0) {
-    const relations = device_ids.map(id => ({
+    const relations: TableInsert<'content_devices'>[] = device_ids.map((id) => ({
       content_id: content.id,
       device_id: id
     }))
-    const { error: relError } = await supabaseAdmin
-      .from('content_devices')
-      .insert(relations)
+    const { error: relError } = await supabaseAdmin.from('content_devices').insert(relations)
 
     if (relError) {
       // 실패 시 컨텐츠 삭제 고려할 수 있으나 여기서는 에러 반환

@@ -2,9 +2,9 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
-import jwt from 'jsonwebtoken'
 import { randomUUID } from 'crypto'
 import { supabaseAdmin } from '@/lib/supabase'
+import { requireAdmin } from '@/lib/apiAuth'
 
 const BUCKET = 'device-icons'
 
@@ -25,19 +25,6 @@ async function ensureBucketExists() {
     }
   } catch {
     // ignore
-  }
-}
-
-function requireAdmin(req: NextRequest) {
-  const token = req.cookies.get('op-access-token')?.value
-  const jwtSecret = process.env.JWT_SECRET
-  if (!token || !jwtSecret) return { error: 'Unauthorized', status: 401 as const }
-  try {
-    const decoded = jwt.verify(token, jwtSecret) as any
-    if ((decoded as any).role !== 'admin') return { error: 'Forbidden', status: 403 as const }
-    return { decoded }
-  } catch {
-    return { error: 'Invalid token', status: 401 as const }
   }
 }
 

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 
 interface SchoolDeviceItem {
@@ -372,7 +372,7 @@ export default function SchoolsPage() {
     return fallbackPalette[hashToIndex(themeKey(c), fallbackPalette.length)]
   }
 
-  const borderFromHex = (hex: string) => {
+  const borderFromHex = () => {
     // 아주 간단히 border는 고정 색으로 (UX: 대비 안정적)
     return '#CBD5E1' // slate-300
   }
@@ -382,7 +382,7 @@ export default function SchoolsPage() {
     return (
       <div
         className="inline-flex items-center rounded-md border px-2 py-0.5 text-sm font-bold text-gray-900 shadow-sm"
-        style={{ backgroundColor: bg, borderColor: borderFromHex(bg) }}
+        style={{ backgroundColor: bg, borderColor: borderFromHex() }}
       >
         {c.name}
       </div>
@@ -392,7 +392,7 @@ export default function SchoolsPage() {
   const renderContentDeviceCard = (c: any) => {
     const bg = resolveContentHex(c)
     return (
-      <div key={c.id} className="rounded-md border p-2" style={{ backgroundColor: bg, borderColor: borderFromHex(bg) }}>
+      <div key={c.id} className="rounded-md border p-2" style={{ backgroundColor: bg, borderColor: borderFromHex() }}>
         <div className="text-xs font-semibold text-gray-700 mb-1">{c.name}</div>
         <div className="border-l-2 border-gray-200 pl-2 space-y-1">{renderDeviceKeys(c.devices)}</div>
       </div>

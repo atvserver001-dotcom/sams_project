@@ -4,7 +4,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import jwt from 'jsonwebtoken'
 import { randomBytes } from 'crypto'
 import { supabaseAdmin } from '@/lib/supabase'
-import type { Database } from '@/types/database.types'
 
 function requireAdmin(req: NextRequest) {
   const token = req.cookies.get('op-access-token')?.value
@@ -19,233 +18,167 @@ function requireAdmin(req: NextRequest) {
   }
 }
 
-// GET: 목록 조회 (페이징 제거, 디바이스 전체 목록 집계)
+function generateAuthKey() {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+  return Array.from(randomBytes(12)).map(b => alphabet[b % alphabet.length]).join('')
+}
+
+// GET: 학교 목록 조회
 export async function GET(req: NextRequest) {
   const auth = requireAdmin(req)
   if ('error' in auth) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
-  const { data, error, count } = await supabaseAdmin
+  // 1. 학교 기본 정보 조회
+  const { data: schoolsRaw, error: schoolErr } = await (supabaseAdmin as any)
     .from('schools')
-    .select('id, group_no, name, school_type, recognition_key, created_at', { count: 'exact' })
+    .select('id, group_no, name, school_type, recognition_key, created_at')
     .order('created_at', { ascending: true })
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (schoolErr) return NextResponse.json({ error: schoolErr.message }, { status: 500 })
 
-  // 디바이스 이름 및 기간 집계 (device_management + devices 조합, 대표 1개)
-  type SchoolListRow = { id: string; group_no: string; name: string; school_type: string; recognition_key: string; device_ids?: string[] | null; created_at: string }
-  const schoolRows = (data ?? []) as SchoolListRow[]
-  const schoolIds = schoolRows.map(s => s.id)
-  // 학교별로 모든 디바이스 이름과 각각의 기간을 수집
-  const deviceMap = new Map<string, Array<{ device_name: string; period: string }>>() // key: school_id (정렬 완료본)
-  const deviceEntriesMap = new Map<string, Array<{ device_id: string; device_name: string; period: string }>>() // 정렬 전 원본(정렬용)
-  // 학교별 제한기간 디바이스의 최소 종료일 수집
-  const minEndDateMap = new Map<string, string | null>()
-  if (schoolIds.length > 0) {
-    const { data: mgmt } = await supabaseAdmin
-      .from('device_management')
-      .select('school_id, device_id, start_date, end_date, limited_period, created_at')
-      .in('school_id', schoolIds)
-      .order('created_at', { ascending: true })
+  const schools = (schoolsRaw ?? []) as any[]
+  const schoolIds = schools.map((s) => s.id as string)
+  
+  // 2. 각 학교별 할당된 컨텐츠 및 디바이스 집계
+  const { data: schoolContentsRaw, error: scErr } = await (supabaseAdmin as any)
+    .from('school_contents')
+    .select(`
+      id,
+      school_id,
+      content_id,
+      start_date,
+      end_date,
+      is_unlimited,
+      content:content_id(name, color_hex),
+      school_devices(
+        id,
+        device_id,
+        created_at,
+        auth_key,
+        memo,
+        device:device_id(device_name)
+      )
+    `)
+    .in('school_id', schoolIds)
 
-    if (mgmt && mgmt.length) {
-      const mgmtRows = (mgmt ?? []) as Array<{ school_id: string; device_id: string; start_date: string | null; end_date: string | null; limited_period: boolean; created_at: string }>
-      const deviceIds = Array.from(new Set(mgmtRows.map((m) => m.device_id)))
-      const { data: deviceRows } = await supabaseAdmin
-        .from('devices')
-        .select('id, device_name, sort_order')
-        .in('id', deviceIds)
+  if (scErr) return NextResponse.json({ error: scErr.message }, { status: 500 })
+  const schoolContents = (schoolContentsRaw ?? []) as any[]
 
-      const idToName = new Map<string, string>()
-      const idToOrder = new Map<string, number | null | undefined>()
-      if (deviceRows) {
-        const deviceRowsList = deviceRows as Array<{ id: string; device_name: string; sort_order?: number | null }>
-        for (const r of deviceRowsList) {
-          idToName.set(r.id as string, r.device_name as string)
-          idToOrder.set(r.id as string, r.sort_order)
-        }
-      }
+  const items = schools.map((school: any) => {
+    const contents = (schoolContents || [])
+      .filter((sc: any) => sc.school_id === school.id)
+      .map((sc: any) => ({
+        id: sc.id,
+        content_id: sc.content_id,
+        name: (sc.content as any)?.name || '-',
+        color_hex: (sc.content as any)?.color_hex || null,
+        start_date: sc.start_date ?? null,
+        end_date: sc.end_date ?? null,
+        is_unlimited: !!sc.is_unlimited,
+        period: sc.is_unlimited ? '제한없음' : `${sc.start_date || ''} ~ ${sc.end_date || ''}`,
+        devices: (sc.school_devices || []).map((sd: any) => ({
+          id: sd.id,
+          device_id: sd.device_id,
+          device_name: sd.device?.device_name || '-',
+          auth_key: sd.auth_key,
+          created_at: sd.created_at,
+          memo: sd.memo ?? '',
+        }))
+      }))
 
-      for (const m of mgmtRows) {
-        const list = deviceEntriesMap.get(m.school_id) || []
-        const deviceName = idToName.get(m.device_id) || '-'
-        const period = m.limited_period && m.start_date && m.end_date
-          ? `${m.start_date} ~ ${m.end_date}`
-          : '제한없음'
-        // 동일 디바이스 중복 방지 (같은 학교 내 동일 디바이스/기간 중복 제거)
-        if (!list.some((x) => x.device_id === m.device_id && x.period === period)) {
-          list.push({ device_id: m.device_id, device_name: deviceName, period })
-        }
-        deviceEntriesMap.set(m.school_id, list)
-
-        // 최소 종료일 기록
-        if (m.limited_period && m.end_date) {
-          const prev = minEndDateMap.get(m.school_id)
-          if (!prev || m.end_date < prev) {
-            minEndDateMap.set(m.school_id, m.end_date)
-          }
-        }
-      }
-
-      // 학교별로 devices.sort_order 기준으로 정렬하여 deviceMap에 최종 저장
-      for (const schoolId of schoolIds) {
-        const entries = deviceEntriesMap.get(schoolId) || []
-        if (entries.length === 0) continue
-        const sorted = [...entries].sort((a, b) => {
-          const ao = idToOrder.get(a.device_id)
-          const bo = idToOrder.get(b.device_id)
-          const av = ao === null || ao === undefined ? Number.POSITIVE_INFINITY : (ao as number)
-          const bv = bo === null || bo === undefined ? Number.POSITIVE_INFINITY : (bo as number)
-          if (av !== bv) return av - bv
-          return a.device_name.localeCompare(b.device_name)
-        })
-        deviceMap.set(schoolId, sorted.map(x => ({ device_name: x.device_name, period: x.period })))
-      }
-    }
-  }
-
-  // [폴백] 레거시 schools.device_ids 사용 (device_management가 비어있는 경우)
-  // device_ids 컬럼이 없는 배포 환경을 고려하여 안전 체크 후 폴백 적용
-  try {
-    const hasDeviceIds = Array.isArray((schoolRows[0] as any)?.device_ids) || (schoolRows as any[]).some(r => 'device_ids' in r)
-    if (hasDeviceIds) {
-      const legacyIdSet = new Set<string>()
-      const schoolNeedingFallback: string[] = [] // school_id 목록
-      for (const s of schoolRows) {
-        const hasMgmt = deviceMap.has(s.id)
-        const legacy = (s as any).device_ids as string[] | null | undefined
-        if (!hasMgmt && legacy && legacy.length) {
-          schoolNeedingFallback.push(s.id)
-          for (const did of legacy) legacyIdSet.add(did)
-        }
-      }
-      if (legacyIdSet.size > 0) {
-        const allLegacyIds = Array.from(legacyIdSet)
-        const { data: legacyDevices } = await supabaseAdmin
-          .from('devices')
-          .select('id, device_name, sort_order')
-          .in('id', allLegacyIds)
-        if (legacyDevices) {
-          const idToName = new Map<string, string>()
-          const idToOrder = new Map<string, number | null | undefined>()
-          for (const r of legacyDevices as Array<{ id: string; device_name: string; sort_order?: number | null }>) {
-            idToName.set(r.id, r.device_name)
-            idToOrder.set(r.id, r.sort_order)
-          }
-          for (const s of schoolRows) {
-            if (!schoolNeedingFallback.includes(s.id)) continue
-            const legacy = ((s as any).device_ids as string[]) || []
-            const list: Array<{ device_id: string; device_name: string; period: string }> = []
-            for (const did of legacy) {
-              const name = idToName.get(did) || '-'
-              if (!list.some(x => x.device_id === did)) {
-                list.push({ device_id: did, device_name: name, period: '제한없음' })
-              }
-            }
-            if (list.length) {
-              const sorted = list.sort((a, b) => {
-                const ao = idToOrder.get(a.device_id)
-                const bo = idToOrder.get(b.device_id)
-                const av = ao === null || ao === undefined ? Number.POSITIVE_INFINITY : (ao as number)
-                const bv = bo === null || bo === undefined ? Number.POSITIVE_INFINITY : (bo as number)
-                if (av !== bv) return av - bv
-                return a.device_name.localeCompare(b.device_name)
-              })
-              deviceMap.set(s.id, sorted.map(x => ({ device_name: x.device_name, period: x.period })))
-            }
-          }
-        }
-      }
-    }
-  } catch {}
-
-  const items = schoolRows.map((s) => {
-    const devices = deviceMap.get(s.id) || []
     return {
-      id: s.id,
-      group_no: s.group_no,
-      name: s.name,
-      school_type: (s as any).school_type,
-      recognition_key: (s as any).recognition_key,
-      devices,
-      min_end_date: minEndDateMap.get(s.id) || null,
+      ...(school as any),
+      contents
     }
   })
 
-  return NextResponse.json({ items, total: count ?? 0 }, { status: 200 })
+  return NextResponse.json({ items, total: schools.length }, { status: 200 })
 }
 
-// POST: 생성
+// POST: 학교 생성
 export async function POST(req: NextRequest) {
   const auth = requireAdmin(req)
   if ('error' in auth) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
   const body = await req.json()
-  const { group_no, name, school_type, device_ids, device_assignments } = body as {
-    group_no?: string; name?: string; school_type?: string; device_ids?: string[]; device_assignments?: Array<{ device_id: string; start_date?: string | null; end_date?: string | null; limited_period?: boolean }>
+  const { group_no, name, school_type, content_assignments } = body as {
+    group_no: string; 
+    name: string; 
+    school_type: number; 
+    content_assignments?: Array<{
+      content_id: string;
+      start_date?: string | null;
+      end_date?: string | null;
+      is_unlimited: boolean;
+      device_quantities: Array<{ device_id: string; quantity: number }>;
+    }>
   }
 
   if (!group_no || !name) {
     return NextResponse.json({ error: 'group_no, name는 필수입니다.' }, { status: 400 })
   }
-  if (!/^\d{4}$/.test(group_no)) {
-    return NextResponse.json({ error: '그룹번호는 4자리 숫자여야 합니다.' }, { status: 400 })
-  }
 
-  const allowedCodes = [1,2,3] as const
-  const finalSchoolType = (school_type ?? 1) as number
-  if (!allowedCodes.includes(finalSchoolType as any)) {
-    return NextResponse.json({ error: 'school_type은 1(초) / 2(중) / 3(고) 이어야 합니다.' }, { status: 400 })
-  }
-
-  // 그룹번호 중복 체크
-  const { data: dup, error: dupErr } = await supabaseAdmin
-    .from('schools')
-    .select('group_no')
-    .eq('group_no', group_no)
-    .maybeSingle()
-  if (dupErr) return NextResponse.json({ error: dupErr.message }, { status: 500 })
+  // 중복 체크
+  const { data: dup } = await (supabaseAdmin as any).from('schools').select('id').eq('group_no', group_no).maybeSingle()
   if (dup) return NextResponse.json({ error: '이미 존재하는 그룹번호입니다.' }, { status: 409 })
 
-  // 인식키 10자리 소문자+숫자 생성
-  const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789'
-  const generateKey = (len = 10) => Array.from(randomBytes(len)).map(b => alphabet[b % alphabet.length]).join('')
-  const recognition_key = generateKey(10)
+  // 인식키 생성
+  const recognition_key = Array.from(randomBytes(5)).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase()
 
-  const { data: inserted, error } = await (supabaseAdmin
+  // 1. 학교 생성
+  const { data: schoolData, error: schoolErr } = await ((supabaseAdmin as any)
     .from('schools') as any)
-    .insert({ group_no, name, school_type: finalSchoolType, recognition_key } as any)
-    .select('id')
+    .insert({ group_no, name, school_type, recognition_key })
+    .select()
     .single()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (schoolErr) return NextResponse.json({ error: schoolErr.message }, { status: 500 })
+  const school = schoolData as any
 
-  // 선택된 디바이스를 device_management에 반영 (기간/제한 포함)
-  const schoolId = (inserted as any)?.id as string
-  const rows = (Array.isArray(device_assignments) && device_assignments.length
-    ? device_assignments.map((a) => ({
-        school_id: schoolId,
-        device_id: a.device_id,
-        start_date: a.start_date ?? null,
-        end_date: a.end_date ?? null,
-        limited_period: !!a.limited_period,
-      }))
-    : (Array.isArray(device_ids) ? device_ids.map((id: string) => ({ school_id: schoolId, device_id: id })) : []))
-  // 기간 검증
-  for (const r of rows as any[]) {
-    if (r.limited_period && r.start_date && r.end_date) {
-      if (r.start_date > r.end_date) {
-        return NextResponse.json({ error: '기간 오류: 시작일은 종료일보다 이후일 수 없습니다.' }, { status: 400 })
+  // 2. 컨텐츠 및 디바이스 할당
+  if (content_assignments && content_assignments.length > 0) {
+    for (const assignment of content_assignments) {
+      // 2.1. school_contents 삽입
+      const { data: scData, error: scErr } = await ((supabaseAdmin as any)
+        .from('school_contents') as any)
+        .insert({
+          school_id: school.id,
+          content_id: assignment.content_id,
+          start_date: assignment.is_unlimited ? null : (assignment.start_date || null),
+          end_date: assignment.is_unlimited ? null : (assignment.end_date || null),
+          is_unlimited: assignment.is_unlimited
+        })
+        .select()
+        .single()
+
+      if (scErr) {
+        return NextResponse.json({ error: '컨텐츠 할당 중 오류: ' + scErr.message }, { status: 500 })
+      }
+      const sc = scData as any
+
+      // 2.2. school_devices 삽입 (수량만큼 인증키 생성)
+      const deviceRows: any[] = []
+      if (assignment.device_quantities && Array.isArray(assignment.device_quantities)) {
+        for (const dq of assignment.device_quantities) {
+          const qty = Number(dq.quantity)
+          for (let i = 0; i < qty; i++) {
+            deviceRows.push({
+              school_content_id: sc.id,
+              device_id: dq.device_id,
+              auth_key: generateAuthKey()
+            })
+          }
+        }
+      }
+
+      if (deviceRows.length > 0) {
+        const { error: devErr } = await (supabaseAdmin as any).from('school_devices').insert(deviceRows)
+        if (devErr) {
+          return NextResponse.json({ error: '디바이스 할당 중 오류: ' + devErr.message }, { status: 500 })
+        }
       }
     }
   }
-  if (rows.length) {
-    const { error: mgmtErr } = await (supabaseAdmin
-      .from('device_management') as any)
-      .insert(rows as any)
-    if (mgmtErr) return NextResponse.json({ error: mgmtErr.message }, { status: 500 })
-  }
-  return NextResponse.json({ success: true }, { status: 201 })
+
+  return NextResponse.json({ success: true, item: school }, { status: 201 })
 }
-
-
-

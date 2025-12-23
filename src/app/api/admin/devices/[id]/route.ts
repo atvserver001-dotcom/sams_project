@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import jwt from 'jsonwebtoken'
 import { supabaseAdmin } from '@/lib/supabase'
 
+const ICON_BUCKET = 'device-icons'
+
 function requireAdmin(req: NextRequest) {
   const token = req.cookies.get('op-access-token')?.value
   const jwtSecret = process.env.JWT_SECRET
@@ -24,26 +26,26 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const { id } = await params
   const body = await req.json()
-  const { device_name, page } = body as { device_name?: string; page?: boolean }
-  const updatePayload: { device_name?: string; page?: boolean } = {}
+  const { device_name } = body as { device_name?: string }
+  const updatePayload: { device_name?: string } = {}
   if (device_name !== undefined) {
     if (!device_name.trim()) return NextResponse.json({ error: 'device_name은 비울 수 없습니다.' }, { status: 400 })
     updatePayload.device_name = device_name.trim()
-  }
-
-  if (page !== undefined) {
-    updatePayload.page = !!page
   }
 
   const { data, error } = await (supabaseAdmin
     .from('devices') as any)
     .update(updatePayload)
     .eq('id', id)
-    .select('id, device_name, sort_order, page')
+    .select('id, device_name, sort_order, icon_path')
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ item: data }, { status: 200 })
+  const icon_path = (data as any)?.icon_path ?? null
+  const { data: signed } = icon_path
+    ? await supabaseAdmin.storage.from(ICON_BUCKET).createSignedUrl(String(icon_path), 60 * 60 * 24)
+    : { data: null as any }
+  return NextResponse.json({ item: { ...data, icon_url: signed?.signedUrl || null } }, { status: 200 })
 }
 
 // DELETE: 디바이스 삭제

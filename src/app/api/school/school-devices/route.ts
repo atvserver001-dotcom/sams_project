@@ -1,8 +1,11 @@
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+
 import { NextRequest, NextResponse } from 'next/server'
 import jwt from 'jsonwebtoken'
 import { supabaseAdmin } from '@/lib/supabase'
+
+const ICON_BUCKET = 'device-icons'
 
 async function getOperatorWithSchool(request: NextRequest) {
   const accessToken = request.cookies.get('op-access-token')?.value
@@ -44,40 +47,59 @@ export async function GET(request: NextRequest) {
 
   const schoolId = auth.schoolId as string
 
-  const { data: mgmt, error: mgmtErr } = await (supabaseAdmin
-    .from('device_management') as any)
-    .select('device_id, start_date, end_date, limited_period, created_at')
+  // 1) 학교에 할당된 school_contents 조회
+  const { data: schoolContents, error: scErr } = await (supabaseAdmin as any)
+    .from('school_contents')
+    .select('id')
     .eq('school_id', schoolId)
-    .order('created_at', { ascending: true })
 
-  if (mgmtErr) return NextResponse.json({ error: mgmtErr.message }, { status: 500 })
+  if (scErr) return NextResponse.json({ error: scErr.message }, { status: 500 })
 
-  const mgmtRows = (mgmt ?? []) as Array<{ device_id: string; start_date: string | null; end_date: string | null; limited_period: boolean }>
-  const deviceIds = Array.from(new Set(mgmtRows.map((m) => m.device_id)))
-
-  let idToDevice = new Map<string, { device_name: string }>()
-  if (deviceIds.length) {
-    const { data: deviceRows, error: devErr } = await supabaseAdmin
-      .from('devices')
-      .select('id, device_name')
-      .in('id', deviceIds)
-    if (devErr) return NextResponse.json({ error: devErr.message }, { status: 500 })
-    for (const r of (deviceRows ?? []) as Array<{ id: string; device_name: string }>) {
-      idToDevice.set(r.id, { device_name: r.device_name })
-    }
+  const scIds = ((schoolContents ?? []) as any[]).map((x) => x.id).filter(Boolean)
+  if (scIds.length === 0) {
+    return NextResponse.json({ items: [] }, { status: 200 })
   }
 
-  const items = mgmtRows
-    .map((m) => {
-      const meta = idToDevice.get(m.device_id)
-      return {
-        device_id: m.device_id,
-        device_name: meta?.device_name || '-',
-        start_date: m.start_date,
-        end_date: m.end_date,
-        limited_period: !!m.limited_period,
-      }
-    })
+  // 2) school_devices(인증키) 조회 + 디바이스명/컨텐츠명 조인
+  const { data, error } = await (supabaseAdmin as any)
+    .from('school_devices')
+    .select(
+      `
+      id,
+      device_id,
+      auth_key,
+      memo,
+      status,
+      created_at,
+      device:device_id(device_name, icon_path),
+      school_content:school_content_id(
+        content:content_id(name, color_hex)
+      )
+    `,
+    )
+    .in('school_content_id', scIds)
+    .order('created_at', { ascending: true })
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  const items = await Promise.all(((data ?? []) as any[]).map(async (row) => {
+    const icon_path = row.device?.icon_path ?? null
+    const { data: signed } = icon_path
+      ? await supabaseAdmin.storage.from(ICON_BUCKET).createSignedUrl(String(icon_path), 60 * 60 * 24)
+      : { data: null as any }
+    return {
+    id: row.id as string,
+    device_id: row.device_id as string,
+    device_name: row.device?.device_name || '-',
+      device_icon_url: signed?.signedUrl || null,
+    auth_key: row.auth_key as string,
+    memo: row.memo ?? '',
+    status: row.status ?? null,
+    created_at: row.created_at ?? null,
+    content_name: row.school_content?.content?.name || null,
+      content_color_hex: row.school_content?.content?.color_hex || null,
+    }
+  }))
 
   return NextResponse.json({ items }, { status: 200 })
 }

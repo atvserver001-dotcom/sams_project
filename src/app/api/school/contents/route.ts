@@ -1,5 +1,6 @@
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+
 import { NextRequest, NextResponse } from 'next/server'
 import jwt from 'jsonwebtoken'
 import { supabaseAdmin } from '@/lib/supabase'
@@ -44,40 +45,33 @@ export async function GET(request: NextRequest) {
 
   const schoolId = auth.schoolId as string
 
-  const { data: mgmt, error: mgmtErr } = await (supabaseAdmin
-    .from('device_management') as any)
-    .select('device_id, start_date, end_date, limited_period, created_at')
+  const { data, error } = await (supabaseAdmin as any)
+    .from('school_contents')
+    .select(
+      `
+      id,
+      content_id,
+      start_date,
+      end_date,
+      is_unlimited,
+      created_at,
+      content:content_id(name, color_hex)
+    `,
+    )
     .eq('school_id', schoolId)
     .order('created_at', { ascending: true })
 
-  if (mgmtErr) return NextResponse.json({ error: mgmtErr.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  const mgmtRows = (mgmt ?? []) as Array<{ device_id: string; start_date: string | null; end_date: string | null; limited_period: boolean }>
-  const deviceIds = Array.from(new Set(mgmtRows.map((m) => m.device_id)))
-
-  let idToDevice = new Map<string, { device_name: string }>()
-  if (deviceIds.length) {
-    const { data: deviceRows, error: devErr } = await supabaseAdmin
-      .from('devices')
-      .select('id, device_name')
-      .in('id', deviceIds)
-    if (devErr) return NextResponse.json({ error: devErr.message }, { status: 500 })
-    for (const r of (deviceRows ?? []) as Array<{ id: string; device_name: string }>) {
-      idToDevice.set(r.id, { device_name: r.device_name })
-    }
-  }
-
-  const items = mgmtRows
-    .map((m) => {
-      const meta = idToDevice.get(m.device_id)
-      return {
-        device_id: m.device_id,
-        device_name: meta?.device_name || '-',
-        start_date: m.start_date,
-        end_date: m.end_date,
-        limited_period: !!m.limited_period,
-      }
-    })
+  const items = ((data ?? []) as any[]).map((sc) => ({
+    school_content_id: sc.id as string,
+    content_id: sc.content_id as string,
+    name: (sc.content as any)?.name || '-',
+    color_hex: (sc.content as any)?.color_hex || null,
+    start_date: sc.start_date ?? null,
+    end_date: sc.end_date ?? null,
+    is_unlimited: !!sc.is_unlimited,
+  }))
 
   return NextResponse.json({ items }, { status: 200 })
 }

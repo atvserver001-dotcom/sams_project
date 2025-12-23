@@ -3,7 +3,8 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import jwt from 'jsonwebtoken'
 import { supabaseAdmin } from '@/lib/supabase'
-import type { Database } from '@/types/database.types'
+
+const ICON_BUCKET = 'device-icons'
 
 function requireAdmin(req: NextRequest) {
   const token = req.cookies.get('op-access-token')?.value
@@ -25,12 +26,21 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await supabaseAdmin
     .from('devices')
-    .select('id, device_name, sort_order, page')
+    .select('id, device_name, sort_order, icon_path')
     .order('sort_order', { ascending: true, nullsFirst: true })
     .order('device_name', { ascending: true })
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ items: data ?? [] }, { status: 200 })
+
+  const rows = (data ?? []) as any[]
+  const items = await Promise.all(rows.map(async (r) => {
+    const icon_path = r.icon_path ?? null
+    if (!icon_path) return { ...r, icon_url: null }
+    const { data: signed } = await supabaseAdmin.storage.from(ICON_BUCKET).createSignedUrl(String(icon_path), 60 * 60 * 24)
+    return { ...r, icon_url: signed?.signedUrl || null }
+  }))
+
+  return NextResponse.json({ items }, { status: 200 })
 }
 
 // POST: 디바이스 생성
@@ -39,19 +49,19 @@ export async function POST(req: NextRequest) {
   if ('error' in auth) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
   const body = await req.json()
-  const { device_name, page } = body as { device_name?: string; page?: boolean }
+  const { device_name } = body as { device_name?: string }
   if (!device_name || !device_name.trim()) {
     return NextResponse.json({ error: 'device_name은 필수입니다.' }, { status: 400 })
   }
 
   const { data, error } = await (supabaseAdmin
     .from('devices') as any)
-    .insert({ device_name: device_name.trim(), page: !!page })
-    .select('id, device_name, sort_order, page')
+    .insert({ device_name: device_name.trim() })
+    .select('id, device_name, sort_order, icon_path')
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ item: data }, { status: 201 })
+  return NextResponse.json({ item: { ...data, icon_url: null } }, { status: 201 })
 }
 
 // POST /reorder: 디바이스 일괄 정렬 저장

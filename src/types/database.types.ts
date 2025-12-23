@@ -31,6 +31,7 @@ export interface Device {
   device_name: string;
   sort_order?: number;
   page?: boolean; // 운영툴 메뉴 표시 여부
+  icon_path?: string | null; // Supabase Storage 경로 (예: device-icons/devices/{id}/...)
 }
 
 export interface DeviceManagement {

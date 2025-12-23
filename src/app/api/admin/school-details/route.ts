@@ -18,7 +18,6 @@ function requireAdmin(req: NextRequest) {
 }
 
 // GET: 학교 세부정보 목록 (페이징)
-// 반환 항목: 번호(index), 학교이름(name), 그룹번호(group_no), 교사 계정 수(teacher_accounts), 제품 구성 수(device_count)
 export async function GET(req: NextRequest) {
   const auth = requireAdmin(req)
   if ('error' in auth) return NextResponse.json({ error: auth.error }, { status: auth.status })
@@ -38,44 +37,52 @@ export async function GET(req: NextRequest) {
 
   if (schoolsErr) return NextResponse.json({ error: schoolsErr.message }, { status: 500 })
 
-  const groupNos = (schools ?? []).map((s: any) => s.group_no as string)
   const schoolIds = (schools ?? []).map((s: any) => s.id as string)
-  const idToGroupNo = new Map<string, string>((schools ?? []).map((s: any) => [s.id as string, s.group_no as string]))
 
-  // 2) 교사 계정 수 집계: operator_accounts where role='school' and school_id == group_no
-  let teacherCountByGroupNo = new Map<string, number>()
+  // 2) 교사 계정 수 집계
+  let teacherCountBySchoolId = new Map<string, number>()
   if (schoolIds.length) {
-    const { data: accountsById, error: accErrById } = await supabaseAdmin
+    const { data: accounts, error: accErr } = await supabaseAdmin
       .from('operator_accounts')
       .select('school_id, role')
       .in('school_id', schoolIds)
+      .eq('role', 'school')
 
-    if (accErrById) return NextResponse.json({ error: accErrById.message }, { status: 500 })
-
-    for (const r of (accountsById ?? []) as Array<{ school_id: string | null; role: string }>) {
-      if (r.school_id && r.role === 'school') {
-        const gno = idToGroupNo.get(r.school_id)
-        if (gno) {
-          teacherCountByGroupNo.set(gno, (teacherCountByGroupNo.get(gno) || 0) + 1)
+    if (!accErr) {
+      for (const r of accounts) {
+        if (r.school_id) {
+          teacherCountBySchoolId.set(r.school_id, (teacherCountBySchoolId.get(r.school_id) || 0) + 1)
         }
       }
     }
   }
 
-  // 3) 제품 구성 수 집계: device_management where group_no in (...) (행 수)
-  let deviceCountByGroupNo = new Map<string, number>()
+  // 3) 제품 구성(디바이스) 수 집계: school_contents -> school_devices
+  let deviceCountBySchoolId = new Map<string, number>()
   if (schoolIds.length) {
-    const { data: mgmtById, error: mgmtErrById } = await supabaseAdmin
-      .from('device_management')
-      .select('school_id')
+    const { data: schoolContents, error: scErr } = await supabaseAdmin
+      .from('school_contents')
+      .select('id, school_id')
       .in('school_id', schoolIds)
 
-    if (mgmtErrById) return NextResponse.json({ error: mgmtErrById.message }, { status: 500 })
+    if (!scErr && schoolContents.length > 0) {
+      const scIds = schoolContents.map(sc => sc.id)
+      const { data: devices, error: devErr } = await supabaseAdmin
+        .from('school_devices')
+        .select('school_content_id')
+        .in('school_content_id', scIds)
 
-    for (const r of (mgmtById ?? []) as Array<{ school_id: string }>) {
-      const gno = idToGroupNo.get(r.school_id)
-      if (gno) {
-        deviceCountByGroupNo.set(gno, (deviceCountByGroupNo.get(gno) || 0) + 1)
+      if (!devErr) {
+        // school_content_id -> school_id 매핑 필요
+        const scToSchool = new Map<string, string>()
+        schoolContents.forEach(sc => scToSchool.set(sc.id, sc.school_id))
+
+        for (const d of devices) {
+          const sid = scToSchool.get(d.school_content_id)
+          if (sid) {
+            deviceCountBySchoolId.set(sid, (deviceCountBySchoolId.get(sid) || 0) + 1)
+          }
+        }
       }
     }
   }
@@ -84,11 +91,9 @@ export async function GET(req: NextRequest) {
     index: from + idx + 1,
     name: s.name as string,
     group_no: s.group_no as string,
-    teacher_accounts: teacherCountByGroupNo.get(s.group_no) || 0,
-    device_count: deviceCountByGroupNo.get(s.group_no) || 0,
+    teacher_accounts: teacherCountBySchoolId.get(s.id) || 0,
+    device_count: deviceCountBySchoolId.get(s.id) || 0,
   }))
 
   return NextResponse.json({ items, total: count ?? 0, page, pageSize }, { status: 200 })
 }
-
-

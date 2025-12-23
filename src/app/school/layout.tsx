@@ -14,6 +14,16 @@ type SchoolDevice = {
   limited_period: boolean
 }
 
+type SchoolContent = {
+  school_content_id: string
+  content_id: string
+  name: string
+  color_hex: string | null
+  start_date: string | null
+  end_date: string | null
+  is_unlimited: boolean
+}
+
 function isExpired(d: SchoolDevice): boolean {
   if (!d.limited_period) return false
   if (!d.end_date) return false
@@ -23,10 +33,20 @@ function isExpired(d: SchoolDevice): boolean {
   return end.getTime() < now.getTime()
 }
 
+function isExpiredContent(c: SchoolContent): boolean {
+  if (c.is_unlimited) return false
+  if (!c.end_date) return false
+  const end = new Date(`${c.end_date}T23:59:59`)
+  const now = new Date()
+  return end.getTime() < now.getTime()
+}
+
 export default function SchoolLayout({ children }: { children: React.ReactNode }) {
   const { schoolName, isAdmin } = useAuth()
   const [devices, setDevices] = useState<SchoolDevice[]>([])
   const [loadingDevices, setLoadingDevices] = useState(true)
+  const [contents, setContents] = useState<SchoolContent[]>([])
+  const [loadingContents, setLoadingContents] = useState(true)
 
   useEffect(() => {
     let ignore = false
@@ -40,6 +60,24 @@ export default function SchoolLayout({ children }: { children: React.ReactNode }
         if (!ignore) setDevices([])
       } finally {
         if (!ignore) setLoadingDevices(false)
+      }
+    }
+    load()
+    return () => { ignore = true }
+  }, [])
+
+  useEffect(() => {
+    let ignore = false
+    const load = async () => {
+      setLoadingContents(true)
+      try {
+        const res = await fetch('/api/school/contents', { credentials: 'include' })
+        const data = await res.json()
+        if (!ignore) setContents(Array.isArray(data.items) ? data.items : [])
+      } catch {
+        if (!ignore) setContents([])
+      } finally {
+        if (!ignore) setLoadingContents(false)
       }
     }
     load()
@@ -65,6 +103,7 @@ export default function SchoolLayout({ children }: { children: React.ReactNode }
   }, [isAdmin])
 
   const menuDevices = useMemo(() => devices, [devices])
+  const menuContents = useMemo(() => contents, [contents])
   return (
     <SchoolRoute>
       <div className="min-h-screen bg-gradient-to-br from-purple-600 via-purple-700 to-indigo-800">
@@ -75,6 +114,48 @@ export default function SchoolLayout({ children }: { children: React.ReactNode }
                 <span className="text-lg font-semibold text-gray-900">운영툴</span>
                 <div className="flex items-center ml-10 gap-6 md:gap-8 text-sm font-medium">
                   <Link href="/school/students" className="text-gray-800 hover:text-gray-900 hover:underline">학생 정보입력</Link>
+                  {menuContents.length > 0 && <span className="text-gray-300">|</span>}
+                  {!loadingContents && menuContents.map((c, idx) => {
+                    const expired = isExpiredContent(c)
+                    const isExercises = c.name === '운동기록관리'
+                    if (expired) {
+                      return (
+                        <button
+                          key={`${c.school_content_id}-${idx}`}
+                          onClick={() => alert('기간만료 되었습니다.')}
+                          className="text-gray-400 cursor-not-allowed"
+                          title={c.name}
+                        >
+                          {c.name}
+                        </button>
+                      )
+                    }
+                    if (isExercises) {
+                      return (
+                        <Link
+                          key={`${c.school_content_id}-${idx}`}
+                          href="/school/exercises"
+                          className="text-gray-800 hover:text-gray-900 hover:underline"
+                          title={c.name}
+                        >
+                          {c.name}
+                        </Link>
+                      )
+                    }
+                    // 현재 컨텐츠별 상세 페이지가 없으므로, 우선 메뉴 노출 + 클릭 시 안내
+                    return (
+                      <button
+                        key={`${c.school_content_id}-${idx}`}
+                        type="button"
+                        onClick={() => alert('준비 중 입니다.')}
+                        className="text-gray-800 hover:text-gray-900 hover:underline"
+                        title={c.name}
+                      >
+                        {c.name}
+                      </button>
+                    )
+                  }).flatMap((node, i, arr) => i < arr.length - 1 ? [node, <span key={`c-sep-${i}`} className="text-gray-300">|</span>] : [node])}
+
                   {menuDevices.length > 0 && <span className="text-gray-300">|</span>}
                   {!loadingDevices && menuDevices.map((d, idx) => {
                     const expired = isExpired(d)
@@ -109,6 +190,14 @@ export default function SchoolLayout({ children }: { children: React.ReactNode }
                       </button>
                     )
                   }).flatMap((node, i, arr) => i < arr.length - 1 ? [node, <span key={`sep-${i}`} className="text-gray-300">|</span>] : [node])}
+
+                  <span className="text-gray-300">|</span>
+                  <Link
+                    href="/school/settings"
+                    className="text-gray-800 hover:text-gray-900 hover:underline"
+                  >
+                    디바이스 설정
+                  </Link>
                 </div>
               </div>
               <div className="flex items-center gap-4">

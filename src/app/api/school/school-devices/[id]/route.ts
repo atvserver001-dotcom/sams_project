@@ -1,5 +1,6 @@
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+
 import { NextRequest, NextResponse } from 'next/server'
 import jwt from 'jsonwebtoken'
 import { supabaseAdmin } from '@/lib/supabase'
@@ -38,48 +39,45 @@ async function getOperatorWithSchool(request: NextRequest) {
   }
 }
 
-export async function GET(request: NextRequest) {
+async function ensureSchoolDeviceOwnedBySchool(schoolDeviceId: string, schoolId: string) {
+  const { data, error } = await (supabaseAdmin as any)
+    .from('school_devices')
+    .select(
+      `
+      id,
+      school_content:school_content_id(
+        school_id
+      )
+    `,
+    )
+    .eq('id', schoolDeviceId)
+    .maybeSingle()
+
+  if (error || !data) return { ok: false as const, status: 404 as const, error: '디바이스를 찾을 수 없습니다.' }
+  if (data.school_content?.school_id !== schoolId) return { ok: false as const, status: 403 as const, error: '권한이 없습니다.' }
+  return { ok: true as const }
+}
+
+// PATCH: school_devices 메모 수정 (학교 전용)
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await getOperatorWithSchool(request)
   if ('error' in auth) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
-  const schoolId = auth.schoolId as string
+  const { id } = await params
+  const body = await request.json().catch(() => ({}))
+  const memo = typeof body.memo === 'string' ? body.memo : ''
 
-  const { data: mgmt, error: mgmtErr } = await (supabaseAdmin
-    .from('device_management') as any)
-    .select('device_id, start_date, end_date, limited_period, created_at')
-    .eq('school_id', schoolId)
-    .order('created_at', { ascending: true })
+  const owned = await ensureSchoolDeviceOwnedBySchool(id, auth.schoolId)
+  if (!owned.ok) return NextResponse.json({ error: owned.error }, { status: owned.status })
 
-  if (mgmtErr) return NextResponse.json({ error: mgmtErr.message }, { status: 500 })
+  const { data, error } = await ((supabaseAdmin as any).from('school_devices') as any)
+    .update({ memo })
+    .eq('id', id)
+    .select('id, memo')
+    .single()
 
-  const mgmtRows = (mgmt ?? []) as Array<{ device_id: string; start_date: string | null; end_date: string | null; limited_period: boolean }>
-  const deviceIds = Array.from(new Set(mgmtRows.map((m) => m.device_id)))
-
-  let idToDevice = new Map<string, { device_name: string }>()
-  if (deviceIds.length) {
-    const { data: deviceRows, error: devErr } = await supabaseAdmin
-      .from('devices')
-      .select('id, device_name')
-      .in('id', deviceIds)
-    if (devErr) return NextResponse.json({ error: devErr.message }, { status: 500 })
-    for (const r of (deviceRows ?? []) as Array<{ id: string; device_name: string }>) {
-      idToDevice.set(r.id, { device_name: r.device_name })
-    }
-  }
-
-  const items = mgmtRows
-    .map((m) => {
-      const meta = idToDevice.get(m.device_id)
-      return {
-        device_id: m.device_id,
-        device_name: meta?.device_name || '-',
-        start_date: m.start_date,
-        end_date: m.end_date,
-        limited_period: !!m.limited_period,
-      }
-    })
-
-  return NextResponse.json({ items }, { status: 200 })
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json({ item: data }, { status: 200 })
 }
 
 

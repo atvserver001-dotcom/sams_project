@@ -235,6 +235,37 @@ export default function SchoolSettingsPage() {
     })
   }
 
+  const removeSettingsPage = (schoolDeviceId: string, pageId: string) => {
+    const pages = pagesByDeviceId[schoolDeviceId] || []
+    const targetIdx = pages.findIndex((p) => p.id === pageId)
+    if (targetIdx < 0) return
+
+    const target = pages[targetIdx]
+    // 이미지 미리보기 URL 정리 + 펼침 상태 정리
+    for (const b of target.blocks) {
+      if (b.type === 'image' && b.previewUrl) URL.revokeObjectURL(b.previewUrl)
+    }
+    setExpandedImageBlocks((prev) => {
+      const next = { ...prev }
+      for (const b of target.blocks) delete next[b.id]
+      return next
+    })
+
+    setPagesByDeviceId((prev) => {
+      const cur = prev[schoolDeviceId] || []
+      return { ...prev, [schoolDeviceId]: cur.filter((p) => p.id !== pageId) }
+    })
+
+    // 활성 페이지가 삭제되면 인접 페이지로 이동
+    setActivePageId((curActive) => {
+      if (curActive !== pageId) return curActive
+      const remaining = pages.filter((p) => p.id !== pageId)
+      if (remaining.length === 0) return null
+      const nextIdx = Math.min(targetIdx, remaining.length - 1)
+      return remaining[nextIdx]?.id ?? remaining[0]?.id ?? null
+    })
+  }
+
   const removeBlock = (schoolDeviceId: string, pageId: string, blockId: string) => {
     setPagesByDeviceId((prev) => {
       const pages = prev[schoolDeviceId] || []
@@ -548,7 +579,7 @@ export default function SchoolSettingsPage() {
                                 if (p.kind === 'images') await loadAssets(deviceId)
                               }}
                               className={[
-                                'shrink-0 px-3 py-2 rounded-2xl text-sm font-semibold border flex items-center gap-2 shadow-sm',
+                                'relative shrink-0 px-3 py-2 rounded-2xl text-sm font-semibold border flex items-center gap-2 shadow-sm pr-9',
                                 selected
                                   ? 'bg-gray-900 text-white border-gray-900'
                                   : 'bg-white text-gray-800 border-gray-200 hover:bg-white',
@@ -563,15 +594,28 @@ export default function SchoolSettingsPage() {
                                 {idx + 1}
                               </span>
                               <span>{idx + 1}페이지</span>
-                              <span
-                                className={[
-                                  'text-[11px] px-2 py-0.5 rounded-full border',
-                                  p.kind === 'custom'
-                                    ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
-                                    : 'bg-amber-50 text-amber-700 border-amber-200',
-                                ].join(' ')}
-                              >
-                                {p.kind === 'custom' ? '커스텀' : '이미지'}
+                             
+
+                              <span className="absolute right-1 top-1/2 -translate-y-1/2">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.preventDefault()
+                                    e.stopPropagation()
+                                    if (!confirm(`${idx + 1}페이지를 삭제하시겠습니까?`)) return
+                                    removeSettingsPage(deviceId, p.id)
+                                  }}
+                                  className={[
+                                    'h-6 w-6 inline-flex items-center justify-center rounded-full border text-2xl font-bold',
+                                    selected
+                                      ? 'border-gray-200 bg-white/70 text-rose-600 hover:bg-rose-50'
+                                      : 'border-gray-200 bg-white/70 text-rose-600 hover:bg-rose-50',
+                                  ].join(' ')}
+                                  aria-label={`${idx + 1}페이지 삭제`}
+                                  title="페이지 삭제"
+                                >
+                                  ×
+                                </button>
                               </span>
                             </button>
                           )

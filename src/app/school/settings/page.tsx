@@ -524,7 +524,7 @@ export default function SchoolSettingsPage() {
                             : 'bg-indigo-600 text-white border-indigo-600 hover:bg-indigo-700',
                         ].join(' ')}
                       >
-                        커스텀페이지 추가
+                        커스텀 페이지 추가
                       </button>
                       <button
                         type="button"
@@ -537,7 +537,7 @@ export default function SchoolSettingsPage() {
                             : 'bg-amber-500 text-white border-amber-500 hover:bg-amber-600',
                         ].join(' ')}
                       >
-                        이미지 추가
+                        이미지 페이지 추가
                       </button>
                       <button
                         type="button"

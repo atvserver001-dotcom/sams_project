@@ -645,14 +645,14 @@ export default function SchoolSettingsPage() {
                                 <button
                                   type="button"
                                   onClick={() => addTextBlock(deviceId, active.id)}
-                                  className="px-3 py-2 rounded-xl bg-white border border-gray-200 hover:bg-gray-50 text-sm font-semibold"
+                                  className="px-3 py-2 rounded-xl bg-indigo-50/70 border border-indigo-200/70 hover:bg-indigo-50 text-indigo-800 text-sm font-semibold"
                                 >
                                   텍스트 추가
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => addImageBlock(deviceId, active.id)}
-                                  className="px-3 py-2 rounded-xl bg-white border border-gray-200 hover:bg-gray-50 text-sm font-semibold"
+                                  className="px-3 py-2 rounded-xl bg-amber-50/70 border border-amber-200/70 hover:bg-amber-50 text-amber-900 text-sm font-semibold"
                                 >
                                   이미지 추가
                                 </button>

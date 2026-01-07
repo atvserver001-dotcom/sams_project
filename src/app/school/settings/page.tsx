@@ -509,7 +509,7 @@ export default function SchoolSettingsPage() {
                           {pages.length}/8
                         </span>
                       </div>
-                      <div className="text-xs text-gray-500 mt-0.5">UI만 먼저 구성되어 있습니다.</div>
+                      <div className="text-xs text-gray-500 mt-0.5"> </div>
                     </div>
 
                     <div className="shrink-0 flex flex-wrap items-center justify-end gap-2">

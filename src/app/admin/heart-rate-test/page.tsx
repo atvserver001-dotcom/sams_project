@@ -36,6 +36,12 @@ type StreamMessage = {
 
 type ConnectionState = 'connecting' | 'open' | 'closed' | 'error' | 'idle'
 
+function isStreamMessage(v: unknown): v is StreamMessage {
+  if (!v || typeof v !== 'object') return false
+  const t = (v as { type?: unknown }).type
+  return t === 'open' || t === 'data' || t === 'error' || t === 'close'
+}
+
 function fmtTime(iso?: string | null) {
   if (!iso) return '-'
   const d = new Date(iso)
@@ -128,11 +134,13 @@ export default function HeartRateTestPage() {
 
     es.onmessage = (evt) => {
       if (myKey !== connectingKeyRef.current) return
-      let msg: StreamMessage | null = null
+      const fallback: StreamMessage = { type: 'data', ts: new Date().toISOString(), raw: String(evt.data) }
+      let msg: StreamMessage = fallback
       try {
-        msg = JSON.parse(evt.data)
+        const parsed: unknown = JSON.parse(evt.data)
+        msg = isStreamMessage(parsed) ? parsed : fallback
       } catch {
-        msg = { type: 'data', ts: new Date().toISOString(), raw: String(evt.data) }
+        msg = fallback
       }
 
       if (msg.type === 'open') {

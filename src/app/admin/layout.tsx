@@ -20,8 +20,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   <Link href="/admin/school-details" className="text-gray-800 hover:text-gray-900 hover:underline">학교세부정보</Link>
                   <span className="text-gray-300">|</span>
                   <Link href="/admin/devices" className="text-gray-800 hover:text-gray-900 hover:underline">디바이스 관리</Link>
-                  <span className="text-gray-300">|</span>
-                  <Link href="/admin/heart-rate-test" className="text-gray-800 hover:text-gray-900 hover:underline">심박계(테스트)</Link>
                 </div>
               </div>
               <div className="flex items-center">

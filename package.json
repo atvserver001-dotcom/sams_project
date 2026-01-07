@@ -7,7 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "health:node": "node scripts/supabase-health.js"
+    "health:node": "node scripts/supabase-health.js",
+    "supabase:sync-func-trig:dry": "cross-env DRY_RUN=1 node scripts/supabase-sync-functions-triggers.js",
+    "supabase:sync-func-trig": "cross-env DRY_RUN=0 node scripts/supabase-sync-functions-triggers.js",
+    "supabase:prepare-prod-schema-from-test": "node scripts/supabase-prepare-prod-schema-from-test.js"
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",
@@ -19,7 +22,8 @@
     "next": "15.5.9",
     "react": "19.1.0",
     "react-dom": "19.1.0",
-    "sharp": "^0.34.5"
+    "sharp": "^0.34.5",
+    "ws": "^8.18.3"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
@@ -31,9 +35,12 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/ws": "^8.18.1",
+    "cross-env": "^7.0.3",
     "dotenv-cli": "^10.0.0",
     "eslint": "^9",
     "eslint-config-next": "15.5.7",
+    "pg": "^8.13.1",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

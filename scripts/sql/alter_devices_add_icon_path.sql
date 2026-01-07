@@ -3,3 +3,10 @@ alter table if exists public.devices
   add column if not exists icon_path text;
 
 
+
+
+
+
+
+
+

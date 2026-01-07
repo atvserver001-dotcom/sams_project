@@ -26,10 +26,34 @@ type AssetItem = {
   metadata?: any
 }
 
+type CustomBlockBase = {
+  id: string
+  type: 'text' | 'image'
+  subtitle: string
+  body: string
+}
+
+type CustomTextBlock = CustomBlockBase & {
+  type: 'text'
+}
+
+type CustomImageBlock = CustomBlockBase & {
+  type: 'image'
+  file: File | null
+  previewUrl: string | null
+}
+
+type CustomBlock = CustomTextBlock | CustomImageBlock
+
+type SettingsPage = {
+  id: string
+  kind: 'custom' | 'images'
+  blocks: CustomBlock[]
+}
+
 export default function SchoolSettingsPage() {
   const [devices, setDevices] = useState<SchoolDeviceInstance[]>([])
   const [loadingDevices, setLoadingDevices] = useState(true)
-  const [expandedId, setExpandedId] = useState<string | null>(null)
 
   const [assetsByDeviceId, setAssetsByDeviceId] = useState<Record<string, AssetItem[]>>({})
   const [loadingAssetsId, setLoadingAssetsId] = useState<string | null>(null)
@@ -37,6 +61,15 @@ export default function SchoolSettingsPage() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
+
+  const [settingsModalOpen, setSettingsModalOpen] = useState(false)
+  const [settingsTarget, setSettingsTarget] = useState<{ id: string; label: string } | null>(null)
+
+  const [pagesByDeviceId, setPagesByDeviceId] = useState<Record<string, SettingsPage[]>>({})
+  const [activePageId, setActivePageId] = useState<string | null>(null)
+  const [customImageDragOverBlockId, setCustomImageDragOverBlockId] = useState<string | null>(null)
+  const [expandedImageBlocks, setExpandedImageBlocks] = useState<Record<string, boolean>>({})
+  const customImageFileInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
   const [memoModalOpen, setMemoModalOpen] = useState(false)
   const [memoTarget, setMemoTarget] = useState<{ id: string; label: string } | null>(null)
@@ -97,6 +130,19 @@ export default function SchoolSettingsPage() {
     loadDevices()
   }, [])
 
+  // 커스텀 이미지 블록 미리보기 URL 정리
+  useEffect(() => {
+    return () => {
+      for (const pages of Object.values(pagesByDeviceId)) {
+        for (const p of pages) {
+          for (const b of p.blocks) {
+            if (b.type === 'image' && b.previewUrl) URL.revokeObjectURL(b.previewUrl)
+          }
+        }
+      }
+    }
+  }, [pagesByDeviceId])
+
   const rows = useMemo(() => devices, [devices])
   const grouped = useMemo(() => {
     const map = new Map<string, { content_name: string; color_hex: string | null; items: SchoolDeviceInstance[] }>()
@@ -116,6 +162,130 @@ export default function SchoolSettingsPage() {
   const resolveHex = (hex: any) => {
     const v = String(hex || '').trim()
     return /^#[0-9a-fA-F]{6}$/.test(v) ? v : null
+  }
+
+  const openSettingsModal = async (id: string, label: string) => {
+    setSettingsTarget({ id, label })
+    setActivePageId(pagesByDeviceId[id]?.[0]?.id ?? null)
+    setSettingsModalOpen(true)
+  }
+
+  const closeSettingsModal = () => {
+    setSettingsModalOpen(false)
+    setSettingsTarget(null)
+    setActivePageId(null)
+    setCustomImageDragOverBlockId(null)
+    setExpandedImageBlocks({})
+  }
+
+  const makeId = () => `${Date.now()}_${Math.random().toString(16).slice(2)}`
+
+  const ensurePages = (schoolDeviceId: string) => {
+    setPagesByDeviceId((prev) => (prev[schoolDeviceId] ? prev : { ...prev, [schoolDeviceId]: [] }))
+  }
+
+  const addSettingsPage = async (schoolDeviceId: string, kind: SettingsPage['kind']) => {
+    const nextId = makeId()
+    let created = false
+
+    setPagesByDeviceId((prev) => {
+      const cur = prev[schoolDeviceId] || []
+      if (cur.length >= 8) return prev
+      created = true
+      const next: SettingsPage = { id: nextId, kind, blocks: [] }
+      return { ...prev, [schoolDeviceId]: [...cur, next] }
+    })
+
+    // state 업데이트가 비동기라 "created" 플래그는 베스트에포트. UI만 먼저라 안전하게 처리.
+    if (created) {
+      setActivePageId(nextId)
+      if (kind === 'images') await loadAssets(schoolDeviceId)
+    }
+  }
+
+  const addTextBlock = (schoolDeviceId: string, pageId: string) => {
+    setPagesByDeviceId((prev) => {
+      const pages = prev[schoolDeviceId] || []
+      return {
+        ...prev,
+        [schoolDeviceId]: pages.map((p) => {
+          if (p.id !== pageId) return p
+          if (p.kind !== 'custom') return p
+          if (p.blocks.length >= 4) return p
+          const next: CustomTextBlock = { id: makeId(), type: 'text', subtitle: '', body: '' }
+          return { ...p, blocks: [...p.blocks, next] }
+        }),
+      }
+    })
+  }
+
+  const addImageBlock = (schoolDeviceId: string, pageId: string) => {
+    setPagesByDeviceId((prev) => {
+      const pages = prev[schoolDeviceId] || []
+      return {
+        ...prev,
+        [schoolDeviceId]: pages.map((p) => {
+          if (p.id !== pageId) return p
+          if (p.kind !== 'custom') return p
+          if (p.blocks.length >= 4) return p
+          const next: CustomImageBlock = { id: makeId(), type: 'image', subtitle: '', body: '', file: null, previewUrl: null }
+          return { ...p, blocks: [...p.blocks, next] }
+        }),
+      }
+    })
+  }
+
+  const removeBlock = (schoolDeviceId: string, pageId: string, blockId: string) => {
+    setPagesByDeviceId((prev) => {
+      const pages = prev[schoolDeviceId] || []
+      return {
+        ...prev,
+        [schoolDeviceId]: pages.map((p) => {
+          if (p.id !== pageId) return p
+          const target = p.blocks.find((b) => b.id === blockId)
+          if (target?.type === 'image' && target.previewUrl) URL.revokeObjectURL(target.previewUrl)
+          return { ...p, blocks: p.blocks.filter((b) => b.id !== blockId) }
+        }),
+      }
+    })
+  }
+
+  const updateBlock = (schoolDeviceId: string, pageId: string, blockId: string, patch: Partial<CustomBlock>) => {
+    setPagesByDeviceId((prev) => {
+      const pages = prev[schoolDeviceId] || []
+      return {
+        ...prev,
+        [schoolDeviceId]: pages.map((p) => {
+          if (p.id !== pageId) return p
+          return {
+            ...p,
+            blocks: p.blocks.map((b) => (b.id === blockId ? ({ ...b, ...patch } as CustomBlock) : b)),
+          }
+        }),
+      }
+    })
+  }
+
+  const attachImageToBlock = (schoolDeviceId: string, pageId: string, blockId: string, file: File | null) => {
+    setPagesByDeviceId((prev) => {
+      const pages = prev[schoolDeviceId] || []
+      return {
+        ...prev,
+        [schoolDeviceId]: pages.map((p) => {
+          if (p.id !== pageId) return p
+          return {
+            ...p,
+            blocks: p.blocks.map((b) => {
+              if (b.id !== blockId) return b
+              if (b.type !== 'image') return b
+              if (b.previewUrl) URL.revokeObjectURL(b.previewUrl)
+              const nextPreview = file ? URL.createObjectURL(file) : null
+              return { ...b, file, previewUrl: nextPreview }
+            }),
+          }
+        }),
+      }
+    })
   }
 
   const openMemoModal = (id: string, label: string, currentMemo: string) => {
@@ -197,11 +367,6 @@ export default function SchoolSettingsPage() {
                       const ord = (counter.get(d.device_name) || 0) + 1
                       counter.set(d.device_name, ord)
 
-                    const expanded = expandedId === d.id
-                    const assets = assetsByDeviceId[d.id] || []
-                    const isLoadingAssets = loadingAssetsId === d.id
-                    const isUploading = uploadingId === d.id
-                    const isDragOver = dragOverId === d.id
                     const contentHex = resolveHex(d.content_color_hex)
                     const cardBg = contentHex || undefined
                     const cardBorder = contentHex ? 'rgba(0,0,0,0.08)' : undefined
@@ -255,135 +420,15 @@ export default function SchoolSettingsPage() {
                             <button
                               type="button"
                               onClick={async () => {
-                                const next = expanded ? null : d.id
-                                setExpandedId(next)
-                                if (!expanded) await loadAssets(d.id)
+                                ensurePages(d.id)
+                                await openSettingsModal(d.id, `${d.device_name} #${ord}`)
                               }}
                               className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium shadow-sm"
                             >
-                              {expanded ? '닫기' : '이미지 관리'}
+                              설정
                             </button>
                           </div>
                         </div>
-
-                        {expanded && (
-                          <div className="mt-5 rounded-2xl border border-gray-200 bg-gradient-to-br from-gray-50 to-white p-4">
-                            <div className="flex flex-wrap items-center justify-between gap-3">
-                              <div className="text-sm font-semibold text-gray-900">이미지</div>
-                            </div>
-
-                            {isLoadingAssets ? (
-                              <div className="py-4 text-center text-sm text-gray-500">불러오는 중...</div>
-                            ) : assets.length === 0 ? (
-                              <div className="mt-3 rounded-xl border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500">
-                                아직 업로드된 이미지가 없습니다.
-                              </div>
-                            ) : (
-                              <div className="mt-3 grid grid-cols-3 sm:grid-cols-4 gap-2">
-                                {assets.map((a) => (
-                                  <div key={a.original_path} className="group relative rounded border border-gray-200 bg-white overflow-hidden">
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        if (a.full_url || a.thumb_url) setPreviewUrl(a.full_url || a.thumb_url)
-                                      }}
-                                      className="block w-full"
-                                      title={a.name}
-                                    >
-                                      {a.thumb_url ? (
-                                        // eslint-disable-next-line @next/next/no-img-element
-                                        <img
-                                          src={a.thumb_url}
-                                          alt={a.name}
-                                          className="h-24 w-full object-cover"
-                                          loading="lazy"
-                                        />
-                                      ) : (
-                                        <div className="h-24 w-full flex items-center justify-center text-xs text-gray-400">미리보기 불가</div>
-                                      )}
-                                    </button>
-
-                                    <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 p-1.5 bg-white/80 backdrop-blur opacity-0 group-hover:opacity-100 transition-opacity">
-                                      <div className="text-[11px] text-gray-600 truncate min-w-0" title={a.name}>{a.name}</div>
-                                      <button
-                                        type="button"
-                                        onClick={async () => {
-                                          if (!confirm('해당 파일을 삭제하시겠습니까?')) return
-                                          try {
-                                            const res = await fetch(
-                                              `/api/school/device-assets?school_device_id=${encodeURIComponent(d.id)}&original_path=${encodeURIComponent(a.original_path)}`,
-                                              { method: 'DELETE', credentials: 'include' },
-                                            )
-                                            const data = await res.json().catch(() => ({}))
-                                            if (!res.ok) throw new Error(data.error || '삭제 실패')
-                                            await loadAssets(d.id)
-                                          } catch (err: any) {
-                                            alert(err?.message || '삭제 실패')
-                                          }
-                                        }}
-                                        className="px-2 py-0.5 rounded bg-rose-100 hover:bg-rose-200 text-rose-800 text-[11px] shrink-0"
-                                      >
-                                        삭제
-                                      </button>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-
-                            {/* Dropzone + 업로드 버튼 (기본 file input UI 제거) */}
-                            <div
-                              className={[
-                                'mt-4 rounded-2xl border border-dashed p-4',
-                                isDragOver ? 'border-indigo-500 bg-indigo-50' : 'border-gray-300 bg-white',
-                              ].join(' ')}
-                              onDragOver={(e) => {
-                                e.preventDefault()
-                                setDragOverId(d.id)
-                              }}
-                              onDragLeave={() => setDragOverId((cur) => (cur === d.id ? null : cur))}
-                              onDrop={async (e) => {
-                                e.preventDefault()
-                                setDragOverId(null)
-                                const fileList = Array.from(e.dataTransfer.files || []).filter((f) => f.type.startsWith('image/'))
-                                await uploadFiles(d.id, fileList)
-                              }}
-                            >
-                              <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-                                <div className="text-sm text-gray-700">
-                                  <div className="font-semibold">이미지를 여기로 드래그해서 업로드</div>
-                                  <div className="text-xs text-gray-500 mt-1">또는 버튼을 눌러 파일을 선택하세요.</div>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <input
-                                    ref={(el) => {
-                                      fileInputRefs.current[d.id] = el
-                                    }}
-                                    type="file"
-                                    multiple
-                                    accept="image/*"
-                                    disabled={isUploading}
-                                    onChange={async (e) => {
-                                      const fileList = Array.from(e.target.files || [])
-                                      await uploadFiles(d.id, fileList)
-                                      // 같은 파일 다시 선택 가능하게 리셋
-                                      e.target.value = ''
-                                    }}
-                                    className="hidden"
-                                  />
-                                  <button
-                                    type="button"
-                                    disabled={isUploading}
-                                    onClick={() => fileInputRefs.current[d.id]?.click()}
-                                    className="px-4 py-2 rounded-xl bg-gray-900 hover:bg-gray-800 text-white text-sm font-semibold shadow-sm disabled:opacity-60"
-                                  >
-                                    {isUploading ? '업로드 중…' : '이미지 업로드'}
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        )}
                       </div>
                     )
                   })
@@ -412,6 +457,492 @@ export default function SchoolSettingsPage() {
             </button>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={previewUrl} alt="미리보기" className="w-full max-h-[80vh] object-contain rounded" />
+          </div>
+        </div>
+      )}
+
+      {/* 설정 모달 */}
+      {settingsModalOpen && settingsTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden text-gray-900 max-h-[85vh] flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-start justify-between gap-3">
+              {(() => {
+                const pages = pagesByDeviceId[settingsTarget.id] || []
+                const pageFull = pages.length >= 8
+                return (
+                  <>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="text-lg font-semibold truncate">설정 - {settingsTarget.label}</div>
+                        <span className="shrink-0 text-[11px] px-2 py-0.5 rounded-full border bg-gray-100 text-gray-700 border-gray-200">
+                          {pages.length}/8
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-500 mt-0.5">UI만 먼저 구성되어 있습니다.</div>
+                    </div>
+
+                    <div className="shrink-0 flex flex-wrap items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        disabled={pageFull}
+                        onClick={() => addSettingsPage(settingsTarget.id, 'custom')}
+                        className={[
+                          'px-3 py-1.5 rounded-xl text-sm font-semibold border shadow-sm',
+                          pageFull
+                            ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                            : 'bg-indigo-600 text-white border-indigo-600 hover:bg-indigo-700',
+                        ].join(' ')}
+                      >
+                        커스텀페이지 추가
+                      </button>
+                      <button
+                        type="button"
+                        disabled={pageFull}
+                        onClick={() => addSettingsPage(settingsTarget.id, 'images')}
+                        className={[
+                          'px-3 py-1.5 rounded-xl text-sm font-semibold border shadow-sm',
+                          pageFull
+                            ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                            : 'bg-amber-500 text-white border-amber-500 hover:bg-amber-600',
+                        ].join(' ')}
+                      >
+                        이미지 추가
+                      </button>
+                      <button
+                        type="button"
+                        onClick={closeSettingsModal}
+                        className="px-3 py-1.5 rounded-xl bg-white border border-gray-200 hover:bg-gray-50 text-gray-800 text-sm font-semibold"
+                      >
+                        닫기
+                      </button>
+                    </div>
+                  </>
+                )
+              })()}
+            </div>
+
+            <div className="px-6 pb-4 pt-0 overflow-y-auto">
+              {(() => {
+                const deviceId = settingsTarget.id
+                const pages = pagesByDeviceId[deviceId] || []
+                const pageFull = pages.length >= 8
+                const active = pages.find((p) => p.id === activePageId) || pages[0] || null
+                const activeBlocks = active?.kind === 'custom' ? active.blocks : []
+                const blockFull = active?.kind === 'custom' ? activeBlocks.length >= 4 : true
+
+                return (
+                  <div className="space-y-4">
+                    {/* 페이지 탭 */}
+                    {pages.length > 0 && (
+                      <div className="sticky top-0 z-30 -mx-6 px-6 pt-0 pb-3 bg-white/95 backdrop-blur border-b border-gray-200">
+                        <div className="rounded-2xl border border-gray-200 bg-gray-50 p-2 shadow-sm">
+                          <div className="flex flex-wrap items-center gap-2">
+                        {pages.map((p, idx) => {
+                          const selected = (active?.id || null) === p.id
+                          return (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onClick={async () => {
+                                setActivePageId(p.id)
+                                if (p.kind === 'images') await loadAssets(deviceId)
+                              }}
+                              className={[
+                                'shrink-0 px-3 py-2 rounded-2xl text-sm font-semibold border flex items-center gap-2 shadow-sm',
+                                selected
+                                  ? 'bg-gray-900 text-white border-gray-900'
+                                  : 'bg-white text-gray-800 border-gray-200 hover:bg-white',
+                              ].join(' ')}
+                            >
+                              <span
+                                className={[
+                                  'inline-flex items-center justify-center h-6 w-6 rounded-full text-xs font-extrabold',
+                                  selected ? 'bg-white/15 text-white' : 'bg-gray-900 text-white',
+                                ].join(' ')}
+                              >
+                                {idx + 1}
+                              </span>
+                              <span>{idx + 1}페이지</span>
+                              <span
+                                className={[
+                                  'text-[11px] px-2 py-0.5 rounded-full border',
+                                  p.kind === 'custom'
+                                    ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                    : 'bg-amber-50 text-amber-700 border-amber-200',
+                                ].join(' ')}
+                              >
+                                {p.kind === 'custom' ? '커스텀' : '이미지'}
+                              </span>
+                            </button>
+                          )
+                        })}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 페이지 내용 */}
+                    {pages.length === 0 || !active ? (
+                      <div className="rounded-2xl border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500">
+                        아직 생성된 페이지가 없습니다. 위 버튼으로 페이지를 추가해보세요.
+                      </div>
+                    ) : active.kind === 'custom' ? (
+                      <div className="space-y-4">
+                        <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                            <div>
+                              <div className="font-semibold text-gray-900">하위 메뉴</div>
+                              <div className="text-xs text-gray-600 mt-1">
+                                1페이지 안에서 텍스트/이미지 컴포넌트를 최대 4개까지 등록할 수 있습니다.
+                              </div>
+                            </div>
+                            {!blockFull ? (
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => addTextBlock(deviceId, active.id)}
+                                  className="px-3 py-2 rounded-xl bg-white border border-gray-200 hover:bg-gray-50 text-sm font-semibold"
+                                >
+                                  텍스트 추가
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => addImageBlock(deviceId, active.id)}
+                                  className="px-3 py-2 rounded-xl bg-white border border-gray-200 hover:bg-gray-50 text-sm font-semibold"
+                                >
+                                  이미지 추가
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="text-sm font-semibold text-gray-600">최대 수량(4개)에 도달했습니다.</div>
+                            )}
+                          </div>
+                        </div>
+
+                        {activeBlocks.length === 0 ? (
+                          <div className="rounded-2xl border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500">
+                            아직 등록된 컴포넌트가 없습니다. 위 버튼으로 추가해보세요.
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {activeBlocks.map((b, idx) => (
+                              <div key={b.id} className="rounded-2xl border border-gray-200 bg-white p-4">
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="text-sm font-semibold text-gray-900">
+                                    {idx + 1}. {b.type === 'text' ? '텍스트' : '이미지'} 컴포넌트
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => removeBlock(deviceId, active.id, b.id)}
+                                    className="px-3 py-1.5 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-800 text-sm font-semibold"
+                                  >
+                                    삭제
+                                  </button>
+                                </div>
+
+                                <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                                  <div className="flex flex-col sm:flex-row gap-3 sm:items-start md:col-span-2">
+                                    <div className="space-y-1.5 w-full sm:basis-2/5">
+                                      <div className="text-xs font-semibold text-gray-700">소제목</div>
+                                      <input
+                                        value={b.subtitle}
+                                        maxLength={10}
+                                        onChange={(e) => updateBlock(deviceId, active.id, b.id, { subtitle: e.target.value })}
+                                        className="w-full rounded-xl border border-gray-300 px-3 py-1.5 text-sm"
+                                        placeholder="소제목"
+                                      />
+                                    </div>
+                                    <div className="space-y-1.5 w-full sm:basis-3/5">
+                                      <div className="text-xs font-semibold text-gray-700">본문</div>
+                                      <textarea
+                                        value={b.body}
+                                        onChange={(e) => updateBlock(deviceId, active.id, b.id, { body: e.target.value })}
+                                        className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm resize-none"
+                                        rows={3}
+                                        placeholder="본문"
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {b.type === 'image' && (
+                                  <div className="mt-3 rounded-2xl border border-gray-200 bg-gray-50 p-3">
+                                    {(() => {
+                                      const expanded = !!expandedImageBlocks[b.id]
+                                      const hasImage = !!b.previewUrl
+
+                                      return (
+                                        <>
+                                          <div className="flex flex-wrap items-center justify-between gap-2">
+                                            <div className="flex items-center gap-2 min-w-0">
+                                              <div className="text-sm font-semibold text-gray-900">이미지</div>
+                                              <span
+                                                className={[
+                                                  'text-[11px] px-2 py-0.5 rounded-full border',
+                                                  hasImage
+                                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                    : 'bg-gray-100 text-gray-700 border-gray-200',
+                                                ].join(' ')}
+                                              >
+                                                {hasImage ? '첨부됨' : '없음'}
+                                              </span>
+                                              {hasImage && (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => setPreviewUrl(b.previewUrl)}
+                                                  className="text-xs text-indigo-700 hover:text-indigo-800 font-semibold truncate max-w-[180px]"
+                                                  title={b.file?.name || '첨부 이미지'}
+                                                >
+                                                  {b.file?.name || '첨부 이미지'}
+                                                </button>
+                                              )}
+                                            </div>
+
+                                            <div className="flex items-center gap-2">
+                                              <input
+                                                ref={(el) => {
+                                                  customImageFileInputRefs.current[b.id] = el
+                                                }}
+                                                type="file"
+                                                accept="image/*"
+                                                className="hidden"
+                                                onChange={(e) => {
+                                                  const file = Array.from(e.target.files || []).find((f) => f.type.startsWith('image/'))
+                                                  attachImageToBlock(deviceId, active.id, b.id, file || null)
+                                                  e.target.value = ''
+                                                }}
+                                              />
+                                              <button
+                                                type="button"
+                                                onClick={() => customImageFileInputRefs.current[b.id]?.click()}
+                                                className="px-3 py-1.5 rounded-xl bg-gray-900 hover:bg-gray-800 text-white text-sm font-semibold"
+                                              >
+                                                이미지 선택
+                                              </button>
+                                              {hasImage && (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => attachImageToBlock(deviceId, active.id, b.id, null)}
+                                                  className="px-3 py-1.5 rounded-xl bg-white border border-gray-200 hover:bg-gray-50 text-sm font-semibold"
+                                                >
+                                                  초기화
+                                                </button>
+                                              )}
+                                              <button
+                                                type="button"
+                                                onClick={() => setExpandedImageBlocks((prev) => ({ ...prev, [b.id]: !expanded }))}
+                                                className="px-3 py-1.5 rounded-xl bg-white border border-gray-200 hover:bg-gray-50 text-sm font-semibold"
+                                              >
+                                                {expanded ? '첨부 영역 닫기' : '첨부 영역 열기'}
+                                              </button>
+                                            </div>
+                                          </div>
+
+                                          {/* 접힘 상태에서는 공간 최소화 */}
+                                          {expanded && (
+                                            <>
+                                              <div className="text-xs text-gray-600 mt-2">
+                                                드래그 앤 드롭 또는 버튼으로 파일을 선택하세요.
+                                              </div>
+
+                                              <div
+                                                className={[
+                                                  'mt-2 rounded-2xl border border-dashed p-3',
+                                                  customImageDragOverBlockId === b.id
+                                                    ? 'border-indigo-500 bg-indigo-50'
+                                                    : 'border-gray-300 bg-white',
+                                                ].join(' ')}
+                                                onDragOver={(e) => {
+                                                  e.preventDefault()
+                                                  setCustomImageDragOverBlockId(b.id)
+                                                }}
+                                                onDragLeave={() =>
+                                                  setCustomImageDragOverBlockId((cur) => (cur === b.id ? null : cur))
+                                                }
+                                                onDrop={(e) => {
+                                                  e.preventDefault()
+                                                  setCustomImageDragOverBlockId(null)
+                                                  const file = Array.from(e.dataTransfer.files || []).find((f) =>
+                                                    f.type.startsWith('image/'),
+                                                  )
+                                                  if (file) attachImageToBlock(deviceId, active.id, b.id, file)
+                                                }}
+                                              >
+                                                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                                                  <div className="text-sm text-gray-700">
+                                                    <div className="font-semibold">이미지를 여기로 드래그</div>
+                                                    <div className="text-xs text-gray-500 mt-0.5">이미지 파일만 선택됩니다.</div>
+                                                  </div>
+                                                </div>
+                                              </div>
+
+                                              <div className="mt-2">
+                                                {b.previewUrl ? (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => setPreviewUrl(b.previewUrl)}
+                                                    className="block w-full"
+                                                  >
+                                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                    <img
+                                                      src={b.previewUrl}
+                                                      alt="첨부 이미지 미리보기"
+                                                      className="w-full max-h-40 object-contain rounded-xl border border-gray-200 bg-white"
+                                                    />
+                                                  </button>
+                                                ) : (
+                                                  <div className="rounded-xl border border-dashed border-gray-300 bg-white p-4 text-center text-sm text-gray-500">
+                                                    첨부된 이미지가 없습니다.
+                                                  </div>
+                                                )}
+                                              </div>
+                                            </>
+                                          )}
+                                        </>
+                                      )
+                                    })()}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      (() => {
+                        const assets = assetsByDeviceId[deviceId] || []
+                        const isLoadingAssets = loadingAssetsId === deviceId
+                        const isUploading = uploadingId === deviceId
+                        const isDragOver = dragOverId === deviceId
+
+                        return (
+                          <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="text-sm font-semibold text-gray-900">디바이스 이미지</div>
+                              <button
+                                type="button"
+                                onClick={() => loadAssets(deviceId)}
+                                className="px-3 py-1.5 rounded-lg bg-white border border-gray-200 hover:bg-gray-50 text-sm font-semibold"
+                              >
+                                새로고침
+                              </button>
+                            </div>
+
+                            {isLoadingAssets ? (
+                              <div className="py-6 text-center text-sm text-gray-500">불러오는 중...</div>
+                            ) : assets.length === 0 ? (
+                              <div className="mt-3 rounded-xl border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500">
+                                아직 업로드된 이미지가 없습니다.
+                              </div>
+                            ) : (
+                              <div className="mt-3 grid grid-cols-3 sm:grid-cols-4 gap-2">
+                                {assets.map((a) => (
+                                  <div key={a.original_path} className="group relative rounded border border-gray-200 bg-white overflow-hidden">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (a.full_url || a.thumb_url) setPreviewUrl(a.full_url || a.thumb_url)
+                                      }}
+                                      className="block w-full"
+                                      title={a.name}
+                                    >
+                                      {a.thumb_url ? (
+                                        // eslint-disable-next-line @next/next/no-img-element
+                                        <img src={a.thumb_url} alt={a.name} className="h-24 w-full object-cover" loading="lazy" />
+                                      ) : (
+                                        <div className="h-24 w-full flex items-center justify-center text-xs text-gray-400">미리보기 불가</div>
+                                      )}
+                                    </button>
+
+                                    <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 p-1.5 bg-white/80 backdrop-blur opacity-0 group-hover:opacity-100 transition-opacity">
+                                      <div className="text-[11px] text-gray-600 truncate min-w-0" title={a.name}>
+                                        {a.name}
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={async () => {
+                                          if (!confirm('해당 파일을 삭제하시겠습니까?')) return
+                                          try {
+                                            const res = await fetch(
+                                              `/api/school/device-assets?school_device_id=${encodeURIComponent(
+                                                deviceId,
+                                              )}&original_path=${encodeURIComponent(a.original_path)}`,
+                                              { method: 'DELETE', credentials: 'include' },
+                                            )
+                                            const data = await res.json().catch(() => ({}))
+                                            if (!res.ok) throw new Error(data.error || '삭제 실패')
+                                            await loadAssets(deviceId)
+                                          } catch (err: any) {
+                                            alert(err?.message || '삭제 실패')
+                                          }
+                                        }}
+                                        className="px-2 py-0.5 rounded bg-rose-100 hover:bg-rose-200 text-rose-800 text-[11px] shrink-0"
+                                      >
+                                        삭제
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            <div
+                              className={[
+                                'mt-4 rounded-2xl border border-dashed p-4',
+                                isDragOver ? 'border-indigo-500 bg-indigo-50' : 'border-gray-300 bg-white',
+                              ].join(' ')}
+                              onDragOver={(e) => {
+                                e.preventDefault()
+                                setDragOverId(deviceId)
+                              }}
+                              onDragLeave={() => setDragOverId((cur) => (cur === deviceId ? null : cur))}
+                              onDrop={async (e) => {
+                                e.preventDefault()
+                                setDragOverId(null)
+                                const fileList = Array.from(e.dataTransfer.files || []).filter((f) => f.type.startsWith('image/'))
+                                await uploadFiles(deviceId, fileList)
+                              }}
+                            >
+                              <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+                                <div className="text-sm text-gray-700">
+                                  <div className="font-semibold">이미지를 여기로 드래그해서 업로드</div>
+                                  <div className="text-xs text-gray-500 mt-1">또는 버튼을 눌러 파일을 선택하세요.</div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    ref={(el) => {
+                                      fileInputRefs.current[deviceId] = el
+                                    }}
+                                    type="file"
+                                    multiple
+                                    accept="image/*"
+                                    disabled={isUploading}
+                                    onChange={async (e) => {
+                                      const fileList = Array.from(e.target.files || [])
+                                      await uploadFiles(deviceId, fileList)
+                                      e.target.value = ''
+                                    }}
+                                    className="hidden"
+                                  />
+                                  <button
+                                    type="button"
+                                    disabled={isUploading}
+                                    onClick={() => fileInputRefs.current[deviceId]?.click()}
+                                    className="px-4 py-2 rounded-xl bg-gray-900 hover:bg-gray-800 text-white text-sm font-semibold shadow-sm disabled:opacity-60"
+                                  >
+                                    {isUploading ? '업로드 중…' : '이미지 업로드'}
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })()
+                    )}
+                  </div>
+                )
+              })()}
+            </div>
           </div>
         </div>
       )}

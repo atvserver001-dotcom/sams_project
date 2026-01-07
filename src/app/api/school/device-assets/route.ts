@@ -11,6 +11,22 @@ const BUCKET = 'device-assets'
 const THUMB_SUFFIX = '.thumb.webp'
 const THUMB_MAX = 256
 const THUMB_QUALITY = 70
+const EMPTY_FOLDER_PLACEHOLDER = '.emptyFolderPlaceholder'
+
+function requireServiceRoleForMutation() {
+  // storage upload/remove 는 service role 이 안전(그리고 보통 필수)합니다.
+  // 현재 lib/supabase.ts 는 service role 미설정 시 anon 키로 fallback 하므로,
+  // “겉으로는 성공처럼 보이지만 실제로는 삭제가 안 되는” 환경 차이를 막기 위해 명시적으로 가드합니다.
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!serviceKey) {
+    return {
+      ok: false as const,
+      error: '서버 설정 오류 (SUPABASE_SERVICE_ROLE_KEY 누락). Storage 업로드/삭제를 수행할 수 없습니다.',
+      status: 500 as const,
+    }
+  }
+  return { ok: true as const }
+}
 
 function sanitizeFilename(name: string) {
   // 경로 문자/제어문자 제거 + 공백 정리
@@ -121,7 +137,17 @@ export async function GET(request: NextRequest) {
 
   if (listErr) return NextResponse.json({ error: listErr.message }, { status: 500 })
 
-  const rows = (files || []).filter((f) => !!f.name).map((f) => ({
+  const rows = (files || [])
+    .filter((f) => !!f.name)
+    // 폴더 유지용 더미 파일/숨김파일은 UI에 노출하지 않음
+    .filter((f) => {
+      const n = String(f.name || '')
+      if (!n) return false
+      if (n === EMPTY_FOLDER_PLACEHOLDER) return false
+      if (n.startsWith('.')) return false
+      return true
+    })
+    .map((f) => ({
     name: f.name,
     path: `${prefix}/${f.name}`,
     id: (f as any).id ?? null,
@@ -182,6 +208,9 @@ export async function POST(request: NextRequest) {
   const auth = await getOperatorWithSchool(request)
   if ('error' in auth) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
+  const guard = requireServiceRoleForMutation()
+  if (!guard.ok) return NextResponse.json({ error: guard.error }, { status: guard.status })
+
   const schoolId = auth.schoolId as string
   const contentType = request.headers.get('content-type') || ''
   if (!contentType.includes('multipart/form-data')) {
@@ -241,6 +270,9 @@ export async function DELETE(request: NextRequest) {
   const auth = await getOperatorWithSchool(request)
   if ('error' in auth) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
+  const guard = requireServiceRoleForMutation()
+  if (!guard.ok) return NextResponse.json({ error: guard.error }, { status: guard.status })
+
   const schoolId = auth.schoolId as string
   const schoolDeviceId = request.nextUrl.searchParams.get('school_device_id') || ''
   const path = request.nextUrl.searchParams.get('path') || ''
@@ -268,8 +300,18 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: '잘못된 path 입니다.' }, { status: 400 })
   }
 
-  const { error: delErr } = await supabaseAdmin.storage.from(BUCKET).remove([originalPath, thumbPath])
-  if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 })
+  // 원본/썸네일을 한 번에 지우면, 썸네일이 없는 파일(예: placeholder)에서 실패할 수 있어 분리 삭제합니다.
+  const { error: delOrigErr } = await supabaseAdmin.storage.from(BUCKET).remove([originalPath])
+  if (delOrigErr) return NextResponse.json({ error: delOrigErr.message }, { status: 500 })
+
+  const { error: delThumbErr } = await supabaseAdmin.storage.from(BUCKET).remove([thumbPath])
+  if (delThumbErr) {
+    // 썸네일이 원래 없던 케이스는 무시 (원본 삭제가 핵심)
+    const msg = String(delThumbErr.message || '')
+    if (!/not\s*found|does\s*not\s*exist|404/i.test(msg)) {
+      return NextResponse.json({ error: delThumbErr.message }, { status: 500 })
+    }
+  }
 
   return NextResponse.json({ success: true }, { status: 200 })
 }

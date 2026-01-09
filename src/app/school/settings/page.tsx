@@ -105,6 +105,64 @@ export default function SchoolSettingsPage() {
   const [settingsSaving, setSettingsSaving] = useState(false)
   const [settingsLoading, setSettingsLoading] = useState(false)
 
+  // 업로드 413 방지(환경별 body limit 대응): 5MB 초과 시 브라우저에서 자동 압축/리사이즈
+  const MAX_UPLOAD_BYTES = 5 * 1024 * 1024
+  const MAX_DIM = 1920
+
+  const compressImageIfNeeded = async (file: File): Promise<File> => {
+    try {
+      if (!file || !(file instanceof File)) return file
+      if (!file.type?.startsWith('image/')) return file
+      if (file.size <= MAX_UPLOAD_BYTES) return file
+
+      const bitmap = await createImageBitmap(file)
+      let w = bitmap.width
+      let h = bitmap.height
+
+      const maxSide = Math.max(w, h)
+      if (maxSide > MAX_DIM) {
+        const scale = MAX_DIM / maxSide
+        w = Math.max(1, Math.round(w * scale))
+        h = Math.max(1, Math.round(h * scale))
+      }
+
+      const canvas = document.createElement('canvas')
+      canvas.width = w
+      canvas.height = h
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return file
+      ctx.drawImage(bitmap, 0, 0, w, h)
+
+      // quality를 낮추며 5MB 이하가 되도록 시도
+      let quality = 0.86
+      let blob: Blob | null = null
+      for (let i = 0; i < 8; i++) {
+        blob = await new Promise<Blob | null>((resolve) =>
+          canvas.toBlob((b) => resolve(b), 'image/jpeg', quality),
+        )
+        if (!blob) break
+        if (blob.size <= MAX_UPLOAD_BYTES) break
+        quality = Math.max(0.5, quality - 0.08)
+        if (quality === 0.5 && blob.size > MAX_UPLOAD_BYTES) {
+          // 해상도도 추가로 축소
+          w = Math.max(1, Math.round(w * 0.85))
+          h = Math.max(1, Math.round(h * 0.85))
+          canvas.width = w
+          canvas.height = h
+          ctx.drawImage(bitmap, 0, 0, w, h)
+        }
+      }
+
+      if (!blob) return file
+
+      const base = (file.name || 'image').replace(/\.[^/.]+$/, '')
+      const newName = `${base || 'image'}.jpg`
+      return new File([blob], newName, { type: 'image/jpeg' })
+    } catch {
+      return file
+    }
+  }
+
   const [memoModalOpen, setMemoModalOpen] = useState(false)
   const [memoTarget, setMemoTarget] = useState<{ id: string; label: string } | null>(null)
   const [memoText, setMemoText] = useState('')
@@ -1195,9 +1253,11 @@ export default function SchoolSettingsPage() {
                                                 type="file"
                                                 accept="image/*"
                                                 className="hidden"
-                                                onChange={(e) => {
+                                                onChange={async (e) => {
                                                   const file = Array.from(e.target.files || []).find((f) => f.type.startsWith('image/'))
-                                                  if (file) setBlockImageDraft(deviceId, active.id, b.id, file)
+                                                  if (!file) return
+                                                  const prepared = await compressImageIfNeeded(file)
+                                                  setBlockImageDraft(deviceId, active.id, b.id, prepared)
                                                   e.target.value = ''
                                                 }}
                                               />
@@ -1248,13 +1308,15 @@ export default function SchoolSettingsPage() {
                                                 onDragLeave={() =>
                                                   setCustomImageDragOverBlockId((cur) => (cur === b.id ? null : cur))
                                                 }
-                                                onDrop={(e) => {
+                                                onDrop={async (e) => {
                                                   e.preventDefault()
                                                   setCustomImageDragOverBlockId(null)
                                                   const file = Array.from(e.dataTransfer.files || []).find((f) =>
                                                     f.type.startsWith('image/'),
                                                   )
-                                                  if (file) setBlockImageDraft(deviceId, active.id, b.id, file)
+                                                  if (!file) return
+                                                  const prepared = await compressImageIfNeeded(file)
+                                                  setBlockImageDraft(deviceId, active.id, b.id, prepared)
                                                 }}
                                               >
                                                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
@@ -1327,9 +1389,11 @@ export default function SchoolSettingsPage() {
                                   type="file"
                                   accept="image/*"
                                   disabled={isUploading}
-                                  onChange={(e) => {
+                                  onChange={async (e) => {
                                     const file = Array.from(e.target.files || []).find((f) => f.type.startsWith('image/'))
-                                    if (file) setPageImageDraft(deviceId, pageId, file)
+                                    if (!file) return
+                                    const prepared = await compressImageIfNeeded(file)
+                                    setPageImageDraft(deviceId, pageId, prepared)
                                     e.target.value = ''
                                   }}
                                   className="hidden"
@@ -1416,7 +1480,8 @@ export default function SchoolSettingsPage() {
                                 if (isUploading) return
                                 const file = Array.from(e.dataTransfer.files || []).find((f) => f.type.startsWith('image/'))
                                 if (!file) return
-                                setPageImageDraft(deviceId, pageId, file)
+                                const prepared = await compressImageIfNeeded(file)
+                                setPageImageDraft(deviceId, pageId, prepared)
                               }}
                             >
                               <div className="flex flex-col sm:flex-row items-center justify-between gap-3">

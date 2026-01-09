@@ -29,12 +29,30 @@ function requireServiceRoleForMutation() {
 }
 
 function sanitizeFilename(name: string) {
-  // 경로 문자/제어문자 제거 + 공백 정리
-  return name
-    .replace(/[\\\/:*?"<>|\u0000-\u001F]/g, '_')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 120)
+  // Supabase Storage key에 안전한 파일명으로 정규화(한글/공백 등 제거)
+  // - 영문/숫자/._- 만 허용
+  // - 공백은 '_'로 치환
+  // - 확장자 보존(가능한 경우)
+  const raw = String(name || '').trim()
+  const norm = raw.normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+  const lastDot = norm.lastIndexOf('.')
+  const baseRaw = lastDot > 0 ? norm.slice(0, lastDot) : norm
+  const extRaw = lastDot > 0 ? norm.slice(lastDot + 1) : ''
+
+  const base = baseRaw
+    .replace(/\s+/g, '_')
+    .replace(/[^A-Za-z0-9._-]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^[_\.]+|[_\.]+$/g, '')
+
+  const ext = extRaw
+    .replace(/\s+/g, '')
+    .replace(/[^A-Za-z0-9]/g, '')
+    .slice(0, 10)
+
+  const safeBase = base || 'image'
+  const withExt = ext ? `${safeBase}.${ext}` : safeBase
+  return withExt.slice(0, 120)
 }
 
 async function makeThumbnailWebp(bytes: Buffer) {

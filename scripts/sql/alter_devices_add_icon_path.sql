@@ -10,3 +10,4 @@ alter table if exists public.devices
 
 
 
+

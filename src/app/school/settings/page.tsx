@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { XMarkIcon } from '@heroicons/react/24/outline'
 
 type SchoolDeviceInstance = {
   id: string
@@ -39,8 +40,12 @@ type CustomTextBlock = CustomBlockBase & {
 
 type CustomImageBlock = CustomBlockBase & {
   type: 'image'
-  file: File | null
-  previewUrl: string | null
+  // DB 연동(테스트 DB): Storage 경로/URL
+  image_name?: string | null
+  image_original_path?: string | null
+  image_thumb_path?: string | null
+  image_full_url?: string | null
+  image_thumb_url?: string | null
 }
 
 type CustomBlock = CustomTextBlock | CustomImageBlock
@@ -48,8 +53,31 @@ type CustomBlock = CustomTextBlock | CustomImageBlock
 type SettingsPage = {
   id: string
   kind: 'custom' | 'images'
+  name: string
   blocks: CustomBlock[]
+  // images 페이지 전용
+  image_name?: string | null
+  image_original_path?: string | null
+  image_thumb_path?: string | null
+  image_full_url?: string | null
+  image_thumb_url?: string | null
 }
+
+type DraftImageMeta = {
+  _pendingFile?: File | null
+  _pendingPreviewUrl?: string | null
+  _pendingClear?: boolean
+}
+
+type DraftBlock = (CustomTextBlock | (CustomImageBlock & DraftImageMeta)) & {
+  _temp?: boolean
+}
+
+type DraftSettingsPage = Omit<SettingsPage, 'blocks'> &
+  DraftImageMeta & {
+    _temp?: boolean
+    blocks: DraftBlock[]
+  }
 
 export default function SchoolSettingsPage() {
   const [devices, setDevices] = useState<SchoolDeviceInstance[]>([])
@@ -58,6 +86,7 @@ export default function SchoolSettingsPage() {
   const [assetsByDeviceId, setAssetsByDeviceId] = useState<Record<string, AssetItem[]>>({})
   const [loadingAssetsId, setLoadingAssetsId] = useState<string | null>(null)
   const [uploadingId, setUploadingId] = useState<string | null>(null)
+  const [uploadingPageId, setUploadingPageId] = useState<string | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
@@ -65,11 +94,16 @@ export default function SchoolSettingsPage() {
   const [settingsModalOpen, setSettingsModalOpen] = useState(false)
   const [settingsTarget, setSettingsTarget] = useState<{ id: string; label: string } | null>(null)
 
-  const [pagesByDeviceId, setPagesByDeviceId] = useState<Record<string, SettingsPage[]>>({})
+  const [pagesByDeviceId, setPagesByDeviceId] = useState<Record<string, DraftSettingsPage[]>>({})
+  const [originalPagesByDeviceId, setOriginalPagesByDeviceId] = useState<Record<string, SettingsPage[]>>({})
   const [activePageId, setActivePageId] = useState<string | null>(null)
   const [customImageDragOverBlockId, setCustomImageDragOverBlockId] = useState<string | null>(null)
   const [expandedImageBlocks, setExpandedImageBlocks] = useState<Record<string, boolean>>({})
   const customImageFileInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
+  const pageImageFileInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
+  const [settingsDirty, setSettingsDirty] = useState(false)
+  const [settingsSaving, setSettingsSaving] = useState(false)
+  const [settingsLoading, setSettingsLoading] = useState(false)
 
   const [memoModalOpen, setMemoModalOpen] = useState(false)
   const [memoTarget, setMemoTarget] = useState<{ id: string; label: string } | null>(null)
@@ -126,22 +160,48 @@ export default function SchoolSettingsPage() {
     }
   }
 
+  const replaceSingleImage = async (schoolDeviceId: string, existingAssets: AssetItem[], file: File) => {
+    if (!file) return
+    try {
+      setUploadingId(schoolDeviceId)
+
+      // 기존 이미지 모두 삭제 (이미지 페이지는 항상 1장만 유지)
+      for (const a of existingAssets) {
+        const res = await fetch(
+          `/api/school/device-assets?school_device_id=${encodeURIComponent(schoolDeviceId)}&original_path=${encodeURIComponent(
+            a.original_path,
+          )}`,
+          { method: 'DELETE', credentials: 'include' },
+        )
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(data.error || '삭제 실패')
+      }
+
+      // 새 이미지 1장 업로드
+      const form = new FormData()
+      form.append('school_device_id', schoolDeviceId)
+      form.append('files', file)
+      const res = await fetch('/api/school/device-assets', {
+        method: 'POST',
+        credentials: 'include',
+        body: form,
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || '업로드 실패')
+
+      await loadAssets(schoolDeviceId)
+    } catch (err: any) {
+      alert(err?.message || '변경 실패')
+    } finally {
+      setUploadingId(null)
+    }
+  }
+
   useEffect(() => {
     loadDevices()
   }, [])
 
-  // 커스텀 이미지 블록 미리보기 URL 정리
-  useEffect(() => {
-    return () => {
-      for (const pages of Object.values(pagesByDeviceId)) {
-        for (const p of pages) {
-          for (const b of p.blocks) {
-            if (b.type === 'image' && b.previewUrl) URL.revokeObjectURL(b.previewUrl)
-          }
-        }
-      }
-    }
-  }, [pagesByDeviceId])
+  // DB 연동으로 이미지는 signed URL 기반(브라우저 object URL 미사용)
 
   const rows = useMemo(() => devices, [devices])
   const grouped = useMemo(() => {
@@ -164,43 +224,140 @@ export default function SchoolSettingsPage() {
     return /^#[0-9a-fA-F]{6}$/.test(v) ? v : null
   }
 
+  const loadDevicePages = async (schoolDeviceId: string) => {
+    const res = await fetch(`/api/school/device-pages?school_device_id=${encodeURIComponent(schoolDeviceId)}`, {
+      credentials: 'include',
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || '페이지 불러오기 실패')
+
+    const items = Array.isArray(data.items) ? data.items : []
+    const pages: SettingsPage[] = items.map((p: any) => ({
+      id: String(p.id),
+      kind: p.kind === 'images' ? 'images' : 'custom',
+      name: String(p.name || ''),
+      image_name: p.image_name ?? null,
+      image_original_path: p.image_original_path ?? null,
+      image_thumb_path: p.image_thumb_path ?? null,
+      image_full_url: p.image_full_url ?? null,
+      image_thumb_url: p.image_thumb_url ?? null,
+      blocks: (Array.isArray(p.blocks) ? p.blocks : []).map((b: any) => {
+        if (String(b.type) === 'image') {
+          const bb: CustomImageBlock = {
+            id: String(b.id),
+            type: 'image',
+            subtitle: String(b.subtitle || ''),
+            body: String(b.body || ''),
+            image_name: b.image_name ?? null,
+            image_original_path: b.image_original_path ?? null,
+            image_thumb_path: b.image_thumb_path ?? null,
+            image_full_url: b.image_full_url ?? null,
+            image_thumb_url: b.image_thumb_url ?? null,
+          }
+          return bb
+        }
+        const tt: CustomTextBlock = {
+          id: String(b.id),
+          type: 'text',
+          subtitle: String(b.subtitle || ''),
+          body: String(b.body || ''),
+        }
+        return tt
+      }),
+    }))
+
+    // 원본(저장된 상태) 보관 + 드래프트(편집용) 생성
+    setOriginalPagesByDeviceId((prev) => ({ ...prev, [schoolDeviceId]: pages }))
+    const draftPages: DraftSettingsPage[] = pages.map((p) => ({
+      ...p,
+      blocks: (p.blocks || []).map((b) => ({ ...(b as any) })) as DraftBlock[],
+    }))
+    setPagesByDeviceId((prev) => ({ ...prev, [schoolDeviceId]: draftPages }))
+    setActivePageId((cur) => (cur && pages.some((p) => p.id === cur) ? cur : pages[0]?.id || null))
+    setSettingsDirty(false)
+    setSettingsLoading(false)
+  }
+
   const openSettingsModal = async (id: string, label: string) => {
+    // 이전 드래프트가 잠깐 보였다가 사라지는 “깜빡임” 방지:
+    // 모달 오픈 직전에 해당 디바이스 드래프트를 즉시 초기화하고 로딩 UI로 전환
+    setSettingsDirty(false)
+    setSettingsLoading(true)
+    setActivePageId(null)
+    setExpandedImageBlocks({})
+    setCustomImageDragOverBlockId(null)
+    setPagesByDeviceId((prev) => ({ ...prev, [id]: [] }))
+    setOriginalPagesByDeviceId((prev) => ({ ...prev, [id]: [] }))
+
     setSettingsTarget({ id, label })
-    setActivePageId(pagesByDeviceId[id]?.[0]?.id ?? null)
     setSettingsModalOpen(true)
+    try {
+      await loadDevicePages(id)
+    } catch (e: any) {
+      setSettingsLoading(false)
+      alert(e?.message || '페이지 불러오기 실패')
+    }
   }
 
   const closeSettingsModal = () => {
+    if (settingsSaving) return
+    if (settingsDirty && !confirm('저장되지 않은 변경사항이 있습니다. 닫을까요?')) return
+
+    // 드래프트에서 생성한 objectURL 정리
+    if (settingsTarget) {
+      const cur = pagesByDeviceId[settingsTarget.id] || []
+      for (const p of cur) {
+        if (p._pendingPreviewUrl) revokePreview(p._pendingPreviewUrl)
+        for (const b of p.blocks || []) {
+          const bb: any = b
+          if (bb?._pendingPreviewUrl) revokePreview(bb._pendingPreviewUrl)
+        }
+      }
+    }
+
     setSettingsModalOpen(false)
     setSettingsTarget(null)
     setActivePageId(null)
     setCustomImageDragOverBlockId(null)
     setExpandedImageBlocks({})
+    setSettingsDirty(false)
   }
 
   const makeId = () => `${Date.now()}_${Math.random().toString(16).slice(2)}`
+  const makeTempId = () => `tmp_${makeId()}`
+  const isTempId = (id: string) => String(id || '').startsWith('tmp_')
+
+  const revokePreview = (url: string | null | undefined) => {
+    try {
+      if (url) URL.revokeObjectURL(url)
+    } catch {}
+  }
 
   const ensurePages = (schoolDeviceId: string) => {
     setPagesByDeviceId((prev) => (prev[schoolDeviceId] ? prev : { ...prev, [schoolDeviceId]: [] }))
   }
 
-  const addSettingsPage = async (schoolDeviceId: string, kind: SettingsPage['kind']) => {
-    const nextId = makeId()
-    let created = false
-
+  const addSettingsPage = (schoolDeviceId: string, kind: SettingsPage['kind']) => {
     setPagesByDeviceId((prev) => {
       const cur = prev[schoolDeviceId] || []
       if (cur.length >= 8) return prev
-      created = true
-      const next: SettingsPage = { id: nextId, kind, blocks: [] }
-      return { ...prev, [schoolDeviceId]: [...cur, next] }
-    })
 
-    // state 업데이트가 비동기라 "created" 플래그는 베스트에포트. UI만 먼저라 안전하게 처리.
-    if (created) {
-      setActivePageId(nextId)
-      if (kind === 'images') await loadAssets(schoolDeviceId)
-    }
+      const imageCount = cur.filter((p) => p.kind === 'images').length
+      const customCount = cur.filter((p) => p.kind === 'custom').length
+      const name = kind === 'images' ? `${imageCount + 1}-이미지` : `${customCount + 1}-페이지`
+
+      const next: DraftSettingsPage = {
+        id: makeTempId(),
+        _temp: true,
+        kind,
+        name,
+        blocks: [],
+      }
+      const nextPages = [...cur, next]
+      setActivePageId(next.id)
+      setSettingsDirty(true)
+      return { ...prev, [schoolDeviceId]: nextPages }
+    })
   }
 
   const addTextBlock = (schoolDeviceId: string, pageId: string) => {
@@ -211,9 +368,10 @@ export default function SchoolSettingsPage() {
         [schoolDeviceId]: pages.map((p) => {
           if (p.id !== pageId) return p
           if (p.kind !== 'custom') return p
-          if (p.blocks.length >= 4) return p
-          const next: CustomTextBlock = { id: makeId(), type: 'text', subtitle: '', body: '' }
-          return { ...p, blocks: [...p.blocks, next] }
+          if ((p.blocks || []).length >= 4) return p
+          const next: DraftBlock = { id: makeTempId(), _temp: true, type: 'text', subtitle: '', body: '' }
+          setSettingsDirty(true)
+          return { ...p, blocks: [...(p.blocks || []), next] }
         }),
       }
     })
@@ -227,43 +385,59 @@ export default function SchoolSettingsPage() {
         [schoolDeviceId]: pages.map((p) => {
           if (p.id !== pageId) return p
           if (p.kind !== 'custom') return p
-          if (p.blocks.length >= 4) return p
-          const next: CustomImageBlock = { id: makeId(), type: 'image', subtitle: '', body: '', file: null, previewUrl: null }
-          return { ...p, blocks: [...p.blocks, next] }
+          if ((p.blocks || []).length >= 4) return p
+          const next: DraftBlock = {
+            id: makeTempId(),
+            _temp: true,
+            type: 'image',
+            subtitle: '',
+            body: '',
+            image_name: null,
+            image_original_path: null,
+            image_thumb_path: null,
+            image_full_url: null,
+            image_thumb_url: null,
+          }
+          setSettingsDirty(true)
+          return { ...p, blocks: [...(p.blocks || []), next] }
         }),
       }
     })
   }
 
   const removeSettingsPage = (schoolDeviceId: string, pageId: string) => {
-    const pages = pagesByDeviceId[schoolDeviceId] || []
-    const targetIdx = pages.findIndex((p) => p.id === pageId)
-    if (targetIdx < 0) return
-
-    const target = pages[targetIdx]
-    // 이미지 미리보기 URL 정리 + 펼침 상태 정리
-    for (const b of target.blocks) {
-      if (b.type === 'image' && b.previewUrl) URL.revokeObjectURL(b.previewUrl)
-    }
-    setExpandedImageBlocks((prev) => {
-      const next = { ...prev }
-      for (const b of target.blocks) delete next[b.id]
-      return next
-    })
-
     setPagesByDeviceId((prev) => {
       const cur = prev[schoolDeviceId] || []
-      return { ...prev, [schoolDeviceId]: cur.filter((p) => p.id !== pageId) }
-    })
+      const target = cur.find((p) => p.id === pageId)
+      if (target?._pendingPreviewUrl) revokePreview(target._pendingPreviewUrl)
+      for (const b of target?.blocks || []) {
+        if ((b as any)._pendingPreviewUrl) revokePreview((b as any)._pendingPreviewUrl)
+      }
 
-    // 활성 페이지가 삭제되면 인접 페이지로 이동
-    setActivePageId((curActive) => {
-      if (curActive !== pageId) return curActive
-      const remaining = pages.filter((p) => p.id !== pageId)
-      if (remaining.length === 0) return null
-      const nextIdx = Math.min(targetIdx, remaining.length - 1)
-      return remaining[nextIdx]?.id ?? remaining[0]?.id ?? null
+      const remaining = cur.filter((p) => p.id !== pageId)
+      // 이미지 페이지는 즉시 연속 번호로 표시(입력 불가 영역이므로)
+      let imageOrd = 0
+      const renamed = remaining.map((p) => {
+        if (p.kind !== 'images') return p
+        imageOrd += 1
+        return { ...p, name: `${imageOrd}-이미지` }
+      })
+      const nextActive = renamed[0]?.id || null
+      setActivePageId((curActive) => (curActive === pageId ? nextActive : curActive))
+      setSettingsDirty(true)
+      return { ...prev, [schoolDeviceId]: renamed }
     })
+  }
+
+  const updateSettingsPageName = (schoolDeviceId: string, pageId: string, name: string) => {
+    setPagesByDeviceId((prev) => {
+      const pages = prev[schoolDeviceId] || []
+      return {
+        ...prev,
+        [schoolDeviceId]: pages.map((p) => (p.id === pageId ? { ...p, name } : p)),
+      }
+    })
+    setSettingsDirty(true)
   }
 
   const removeBlock = (schoolDeviceId: string, pageId: string, blockId: string) => {
@@ -273,9 +447,10 @@ export default function SchoolSettingsPage() {
         ...prev,
         [schoolDeviceId]: pages.map((p) => {
           if (p.id !== pageId) return p
-          const target = p.blocks.find((b) => b.id === blockId)
-          if (target?.type === 'image' && target.previewUrl) URL.revokeObjectURL(target.previewUrl)
-          return { ...p, blocks: p.blocks.filter((b) => b.id !== blockId) }
+          const target = (p.blocks || []).find((b) => b.id === blockId) as any
+          if (target?._pendingPreviewUrl) revokePreview(target._pendingPreviewUrl)
+          setSettingsDirty(true)
+          return { ...p, blocks: (p.blocks || []).filter((b) => b.id !== blockId) }
         }),
       }
     })
@@ -290,14 +465,46 @@ export default function SchoolSettingsPage() {
           if (p.id !== pageId) return p
           return {
             ...p,
-            blocks: p.blocks.map((b) => (b.id === blockId ? ({ ...b, ...patch } as CustomBlock) : b)),
+            blocks: (p.blocks || []).map((b) => (b.id === blockId ? ({ ...b, ...patch } as DraftBlock) : b)),
           }
+        }),
+      }
+    })
+    setSettingsDirty(true)
+  }
+
+  const setPageImageDraft = (schoolDeviceId: string, pageId: string, file: File | null) => {
+    setPagesByDeviceId((prev) => {
+      const pages = prev[schoolDeviceId] || []
+      return {
+        ...prev,
+        [schoolDeviceId]: pages.map((p) => {
+          if (p.id !== pageId) return p
+          if (p._pendingPreviewUrl) revokePreview(p._pendingPreviewUrl)
+          const nextPreview = file ? URL.createObjectURL(file) : null
+          setSettingsDirty(true)
+          return { ...p, _pendingFile: file, _pendingPreviewUrl: nextPreview, _pendingClear: false }
         }),
       }
     })
   }
 
-  const attachImageToBlock = (schoolDeviceId: string, pageId: string, blockId: string, file: File | null) => {
+  const clearPageImageDraft = (schoolDeviceId: string, pageId: string) => {
+    setPagesByDeviceId((prev) => {
+      const pages = prev[schoolDeviceId] || []
+      return {
+        ...prev,
+        [schoolDeviceId]: pages.map((p) => {
+          if (p.id !== pageId) return p
+          if (p._pendingPreviewUrl) revokePreview(p._pendingPreviewUrl)
+          setSettingsDirty(true)
+          return { ...p, _pendingFile: null, _pendingPreviewUrl: null, _pendingClear: true }
+        }),
+      }
+    })
+  }
+
+  const setBlockImageDraft = (schoolDeviceId: string, pageId: string, blockId: string, file: File | null) => {
     setPagesByDeviceId((prev) => {
       const pages = prev[schoolDeviceId] || []
       return {
@@ -306,17 +513,207 @@ export default function SchoolSettingsPage() {
           if (p.id !== pageId) return p
           return {
             ...p,
-            blocks: p.blocks.map((b) => {
+            blocks: (p.blocks || []).map((b) => {
               if (b.id !== blockId) return b
               if (b.type !== 'image') return b
-              if (b.previewUrl) URL.revokeObjectURL(b.previewUrl)
+              const bb = b as any
+              if (bb._pendingPreviewUrl) revokePreview(bb._pendingPreviewUrl)
               const nextPreview = file ? URL.createObjectURL(file) : null
-              return { ...b, file, previewUrl: nextPreview }
+              setSettingsDirty(true)
+              return { ...b, _pendingFile: file, _pendingPreviewUrl: nextPreview, _pendingClear: false }
             }),
           }
         }),
       }
     })
+  }
+
+  const clearBlockImageDraft = (schoolDeviceId: string, pageId: string, blockId: string) => {
+    setPagesByDeviceId((prev) => {
+      const pages = prev[schoolDeviceId] || []
+      return {
+        ...prev,
+        [schoolDeviceId]: pages.map((p) => {
+          if (p.id !== pageId) return p
+          return {
+            ...p,
+            blocks: (p.blocks || []).map((b) => {
+              if (b.id !== blockId) return b
+              if (b.type !== 'image') return b
+              const bb = b as any
+              if (bb._pendingPreviewUrl) revokePreview(bb._pendingPreviewUrl)
+              setSettingsDirty(true)
+              return { ...b, _pendingFile: null, _pendingPreviewUrl: null, _pendingClear: true }
+            }),
+          }
+        }),
+      }
+    })
+  }
+
+  const saveSettings = async () => {
+    if (!settingsTarget) return
+    if (settingsSaving) return
+    const schoolDeviceId = settingsTarget.id
+    const draftPages = pagesByDeviceId[schoolDeviceId] || []
+    const origPages = originalPagesByDeviceId[schoolDeviceId] || []
+
+    setSettingsSaving(true)
+    try {
+      const fetchJson = async (url: string, init?: RequestInit) => {
+        const res = await fetch(url, { credentials: 'include', ...init })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(data.error || `요청 실패: ${res.status}`)
+        return data
+      }
+
+      const pageIdMap = new Map<string, string>() // tmp -> real
+      const blockIdMap = new Map<string, string>() // tmp -> real
+
+      const origPageIds = new Set(origPages.map((p) => p.id))
+      const draftRealPageIds = new Set(draftPages.filter((p) => !isTempId(p.id)).map((p) => p.id))
+
+      // 1) 삭제된 페이지 제거
+      for (const p of origPages) {
+        if (!draftRealPageIds.has(p.id)) {
+          await fetchJson(`/api/school/device-pages/${encodeURIComponent(p.id)}`, { method: 'DELETE' })
+        }
+      }
+
+      // 2) 새 페이지 생성
+      for (const p of draftPages) {
+        if (!isTempId(p.id)) continue
+        const created = await fetchJson('/api/school/device-pages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ school_device_id: schoolDeviceId, kind: p.kind }),
+        })
+        const realId = String(created?.item?.id || '')
+        if (!realId) throw new Error('페이지 생성 결과가 올바르지 않습니다.')
+        pageIdMap.set(p.id, realId)
+        // 커스텀 페이지는 사용자가 이름을 바꿀 수 있으니 저장
+        if (p.kind === 'custom' && p.name && p.name !== String(created?.item?.name || '')) {
+          await fetchJson(`/api/school/device-pages/${encodeURIComponent(realId)}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: p.name }),
+          })
+        }
+      }
+
+      const resolvePageId = (id: string) => pageIdMap.get(id) || id
+
+      // 3) 기존 페이지 이름 변경(커스텀만)
+      const origById = new Map(origPages.map((p) => [p.id, p]))
+      for (const p of draftPages) {
+        const pid = resolvePageId(p.id)
+        if (!origPageIds.has(pid)) continue
+        const orig = origById.get(pid)
+        if (!orig) continue
+        if (p.kind === 'custom' && String(orig.name || '') !== String(p.name || '')) {
+          await fetchJson(`/api/school/device-pages/${encodeURIComponent(pid)}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: p.name }),
+          })
+        }
+      }
+
+      // 4) 이미지 페이지 이미지 업로드/삭제(드래프트)
+      for (const p of draftPages) {
+        if (p.kind !== 'images') continue
+        const pid = resolvePageId(p.id)
+        if (p._pendingClear) {
+          await fetchJson(`/api/school/device-pages/${encodeURIComponent(pid)}/image`, { method: 'DELETE' })
+        } else if (p._pendingFile) {
+          const form = new FormData()
+          form.append('file', p._pendingFile)
+          await fetchJson(`/api/school/device-pages/${encodeURIComponent(pid)}/image`, { method: 'POST', body: form })
+        }
+      }
+
+      // 5) 블록 CRUD + 이미지(블록)
+      for (const p of draftPages) {
+        if (p.kind !== 'custom') continue
+        const pid = resolvePageId(p.id)
+        const origPage = origById.get(pid)
+        const origBlocks = (origPage?.blocks || []) as CustomBlock[]
+        const origBlockIds = new Set(origBlocks.map((b) => b.id))
+        const draftBlocks = p.blocks || []
+        const draftRealBlockIds = new Set(draftBlocks.filter((b) => !isTempId(b.id)).map((b) => b.id))
+
+        // 삭제된 블록 제거
+        for (const b of origBlocks) {
+          if (!draftRealBlockIds.has(b.id)) {
+            await fetchJson(`/api/school/device-page-blocks/${encodeURIComponent(b.id)}`, { method: 'DELETE' })
+          }
+        }
+
+        // 새 블록 생성
+        for (const b of draftBlocks) {
+          if (!isTempId(b.id)) continue
+          const created = await fetchJson('/api/school/device-page-blocks', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              page_id: pid,
+              type: b.type,
+              subtitle: b.subtitle || '',
+              body: b.body || '',
+            }),
+          })
+          const realId = String(created?.item?.id || '')
+          if (!realId) throw new Error('블록 생성 결과가 올바르지 않습니다.')
+          blockIdMap.set(b.id, realId)
+
+          // 이미지 블록이면 업로드(드래프트)
+          if (b.type === 'image' && (b as any)._pendingFile) {
+            const form = new FormData()
+            form.append('file', (b as any)._pendingFile)
+            await fetchJson(`/api/school/device-page-blocks/${encodeURIComponent(realId)}/image`, { method: 'POST', body: form })
+          }
+        }
+
+        const resolveBlockId = (id: string) => blockIdMap.get(id) || id
+
+        // 기존 블록 텍스트 업데이트 + 이미지 업로드/삭제
+        const origBlockById = new Map(origBlocks.map((b) => [b.id, b]))
+        for (const b of draftBlocks) {
+          const bid = resolveBlockId(b.id)
+          if (!origBlockIds.has(bid)) continue
+          const origB = origBlockById.get(bid)
+          if (!origB) continue
+
+          if (String(origB.subtitle || '') !== String(b.subtitle || '') || String(origB.body || '') !== String(b.body || '')) {
+            await fetchJson(`/api/school/device-page-blocks/${encodeURIComponent(bid)}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ subtitle: b.subtitle || '', body: b.body || '' }),
+            })
+          }
+
+          if (b.type === 'image') {
+            const bb = b as any
+            if (bb._pendingClear) {
+              await fetchJson(`/api/school/device-page-blocks/${encodeURIComponent(bid)}/image`, { method: 'DELETE' })
+            } else if (bb._pendingFile) {
+              const form = new FormData()
+              form.append('file', bb._pendingFile)
+              await fetchJson(`/api/school/device-page-blocks/${encodeURIComponent(bid)}/image`, { method: 'POST', body: form })
+            }
+          }
+        }
+      }
+
+      // 6) 재로드(저장된 값으로 드래프트 초기화)
+      await loadDevicePages(schoolDeviceId)
+      setSettingsDirty(false)
+      alert('저장 완료')
+    } catch (e: any) {
+      alert(e?.message || '저장 실패')
+    } finally {
+      setSettingsSaving(false)
+    }
   }
 
   const openMemoModal = (id: string, label: string, currentMemo: string) => {
@@ -473,7 +870,7 @@ export default function SchoolSettingsPage() {
 
       {previewUrl && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4"
           onClick={() => setPreviewUrl(null)}
           role="button"
           tabIndex={-1}
@@ -496,57 +893,85 @@ export default function SchoolSettingsPage() {
       {settingsModalOpen && settingsTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden text-gray-900 max-h-[85vh] flex flex-col">
-            <div className="px-6 py-4 border-b border-gray-200 flex items-start justify-between gap-3">
+            <div className="px-6 py-4 border-b border-gray-200">
               {(() => {
                 const pages = pagesByDeviceId[settingsTarget.id] || []
                 const pageFull = pages.length >= 8
                 return (
                   <>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div className="text-lg font-semibold truncate">설정 - {settingsTarget.label}</div>
-                        <span className="shrink-0 text-[11px] px-2 py-0.5 rounded-full border bg-gray-100 text-gray-700 border-gray-200">
-                          {pages.length}/8
-                        </span>
+                    {/* 1줄: 타이틀 + 저장(닫기 왼쪽) + 닫기 */}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="text-lg font-semibold truncate">설정 - {settingsTarget.label}</div>
+                          <span className="shrink-0 text-[11px] px-2 py-0.5 rounded-full border bg-gray-100 text-gray-700 border-gray-200">
+                            {pages.length}/8
+                          </span>
+                          {settingsDirty && (
+                            <span className="shrink-0 text-[11px] px-2 py-0.5 rounded-full border bg-amber-50 text-amber-800 border-amber-200">
+                              저장 필요
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-gray-500 mt-0.5">변경 후 “저장”을 눌러야 반영됩니다.</div>
                       </div>
-                      <div className="text-xs text-gray-500 mt-0.5"> </div>
+
+                      <div className="shrink-0 flex items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={!settingsDirty || settingsSaving}
+                          onClick={saveSettings}
+                          className={[
+                            'px-3 py-1.5 rounded-xl text-sm font-semibold border shadow-sm disabled:opacity-60',
+                            settingsDirty
+                              ? 'bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700'
+                              : 'bg-gray-100 text-gray-400 border-gray-200',
+                          ].join(' ')}
+                        >
+                          {settingsSaving ? '저장 중…' : '저장'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={closeSettingsModal}
+                          className="px-3 py-1.5 rounded-xl bg-white border border-gray-200 hover:bg-gray-50 text-gray-800 text-sm font-semibold"
+                        >
+                          닫기
+                        </button>
+                      </div>
                     </div>
 
-                    <div className="shrink-0 flex flex-wrap items-center justify-end gap-2">
-                      <button
-                        type="button"
-                        disabled={pageFull}
-                        onClick={() => addSettingsPage(settingsTarget.id, 'custom')}
-                        className={[
-                          'px-3 py-1.5 rounded-xl text-sm font-semibold border shadow-sm',
-                          pageFull
-                            ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                            : 'bg-indigo-600 text-white border-indigo-600 hover:bg-indigo-700',
-                        ].join(' ')}
-                      >
-                        커스텀 페이지 추가
-                      </button>
-                      <button
-                        type="button"
-                        disabled={pageFull}
-                        onClick={() => addSettingsPage(settingsTarget.id, 'images')}
-                        className={[
-                          'px-3 py-1.5 rounded-xl text-sm font-semibold border shadow-sm',
-                          pageFull
-                            ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                            : 'bg-amber-500 text-white border-amber-500 hover:bg-amber-600',
-                        ].join(' ')}
-                      >
-                        이미지 페이지 추가
-                      </button>
-                      <button
-                        type="button"
-                        onClick={closeSettingsModal}
-                        className="px-3 py-1.5 rounded-xl bg-white border border-gray-200 hover:bg-gray-50 text-gray-800 text-sm font-semibold"
-                      >
-                        닫기
-                      </button>
-                    </div>
+                    {/* 2줄: 페이지 추가 버튼 (로딩 중엔 숨김) */}
+                    {!settingsLoading && (
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={pageFull || settingsSaving}
+                          onClick={() => addSettingsPage(settingsTarget.id, 'custom')}
+                          className={[
+                            'px-3 py-2 rounded-xl text-sm font-semibold border shadow-sm disabled:opacity-60',
+                            pageFull
+                              ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                              : 'bg-indigo-600 text-white border-indigo-600 hover:bg-indigo-700',
+                          ].join(' ')}
+                        >
+                          커스텀 페이지 추가
+                        </button>
+                        <button
+                          type="button"
+                          disabled={pageFull || settingsSaving}
+                          onClick={() => addSettingsPage(settingsTarget.id, 'images')}
+                          className={[
+                            'px-3 py-2 rounded-xl text-sm font-semibold border shadow-sm disabled:opacity-60',
+                            pageFull
+                              ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                              : 'bg-amber-500 text-white border-amber-500 hover:bg-amber-600',
+                          ].join(' ')}
+                        >
+                          이미지 페이지 추가
+                        </button>
+                        {pageFull && <span className="text-xs text-gray-500 ml-1">페이지 최대 8개</span>}
+                      </div>
+                    )}
                   </>
                 )
               })()}
@@ -563,61 +988,66 @@ export default function SchoolSettingsPage() {
 
                 return (
                   <div className="space-y-4">
+                    {settingsLoading && (
+                      <div className="rounded-2xl border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500">
+                        불러오는 중...
+                      </div>
+                    )}
+
                     {/* 페이지 탭 */}
-                    {pages.length > 0 && (
+                    {!settingsLoading && pages.length > 0 && (
                       <div className="sticky top-0 z-30 -mx-6 px-6 pt-0 pb-3 bg-white/95 backdrop-blur border-b border-gray-200">
                         <div className="rounded-2xl border border-gray-200 bg-gray-50 p-2 shadow-sm">
-                          <div className="flex flex-wrap items-center gap-2">
+                          <div className="grid grid-cols-4 gap-2">
                         {pages.map((p, idx) => {
                           const selected = (active?.id || null) === p.id
                           return (
-                            <button
-                              key={p.id}
-                              type="button"
-                              onClick={async () => {
-                                setActivePageId(p.id)
-                                if (p.kind === 'images') await loadAssets(deviceId)
-                              }}
-                              className={[
-                                'relative shrink-0 px-3 py-2 rounded-2xl text-sm font-semibold border flex items-center gap-2 shadow-sm pr-9',
-                                selected
-                                  ? 'bg-gray-900 text-white border-gray-900'
-                                  : 'bg-white text-gray-800 border-gray-200 hover:bg-white',
-                              ].join(' ')}
-                            >
-                              <span
+                            <div key={p.id} className="relative w-full">
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  setActivePageId(p.id)
+                                }}
                                 className={[
-                                  'inline-flex items-center justify-center h-6 w-6 rounded-full text-xs font-extrabold',
-                                  selected ? 'bg-white/15 text-white' : 'bg-gray-900 text-white',
+                                  'w-full px-3 py-2 rounded-2xl text-sm font-semibold border flex items-center gap-2 shadow-sm pr-9 justify-start',
+                                  selected
+                                    ? 'bg-gray-900 text-white border-gray-900'
+                                    : 'bg-white text-gray-800 border-gray-200 hover:bg-white',
                                 ].join(' ')}
                               >
-                                {idx + 1}
-                              </span>
-                              <span>{idx + 1}페이지</span>
-                             
-
-                              <span className="absolute right-1 top-1/2 -translate-y-1/2">
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.preventDefault()
-                                    e.stopPropagation()
-                                    if (!confirm(`${idx + 1}페이지를 삭제하시겠습니까?`)) return
-                                    removeSettingsPage(deviceId, p.id)
-                                  }}
+                                <span
                                   className={[
-                                    'h-6 w-6 inline-flex items-center justify-center rounded-full border text-2xl font-bold',
-                                    selected
-                                      ? 'border-gray-200 bg-white/70 text-rose-600 hover:bg-rose-50'
-                                      : 'border-gray-200 bg-white/70 text-rose-600 hover:bg-rose-50',
+                                    'inline-flex items-center justify-center h-6 w-6 rounded-full text-xs font-extrabold',
+                                    selected ? 'bg-white/15 text-white' : 'bg-gray-900 text-white',
                                   ].join(' ')}
-                                  aria-label={`${idx + 1}페이지 삭제`}
-                                  title="페이지 삭제"
                                 >
-                                  ×
-                                </button>
-                              </span>
-                            </button>
+                                  {idx + 1}
+                                </span>
+                                <span className="max-w-[140px] truncate" title={p.name || `${idx + 1}페이지`}>
+                                  {p.name || `${idx + 1}페이지`}
+                                </span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  if (!confirm(`${p.name || `${idx + 1}페이지`}를 삭제하시겠습니까?`)) return
+                                  removeSettingsPage(deviceId, p.id)
+                                }}
+                                className={[
+                                  'absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 inline-flex items-center justify-center rounded-full border text-xs font-bold',
+                                  selected
+                                    ? 'border-white/20 bg-white/10 text-white hover:bg-white/15'
+                                    : 'border-gray-200 bg-white/70 text-rose-600 hover:bg-rose-50',
+                                ].join(' ')}
+                                aria-label={`${idx + 1}페이지 삭제`}
+                                title="페이지 삭제"
+                              >
+                                <XMarkIcon className="h-4 w-4" aria-hidden="true" />
+                              </button>
+                            </div>
                           )
                         })}
                           </div>
@@ -626,7 +1056,7 @@ export default function SchoolSettingsPage() {
                     )}
 
                     {/* 페이지 내용 */}
-                    {pages.length === 0 || !active ? (
+                    {settingsLoading ? null : pages.length === 0 || !active ? (
                       <div className="rounded-2xl border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500">
                         아직 생성된 페이지가 없습니다. 위 버튼으로 페이지를 추가해보세요.
                       </div>
@@ -635,9 +1065,14 @@ export default function SchoolSettingsPage() {
                         <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
                           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                             <div>
-                              <div className="font-semibold text-gray-900">하위 메뉴</div>
-                              <div className="text-xs text-gray-600 mt-1">
-                                1페이지 안에서 텍스트/이미지 컴포넌트를 최대 4개까지 등록할 수 있습니다.
+                              <div className="font-semibold text-gray-900">페이지 이름</div>
+                              <div className="mt-2">
+                                <input
+                                  value={active.name || ''}
+                                  onChange={(e) => updateSettingsPageName(deviceId, active.id, e.target.value)}
+                                  className="w-full sm:w-[250px] rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm"
+                                  maxLength={20}
+                                />
                               </div>
                             </div>
                             {!blockFull ? (
@@ -713,7 +1148,15 @@ export default function SchoolSettingsPage() {
                                   <div className="mt-3 rounded-2xl border border-gray-200 bg-gray-50 p-3">
                                     {(() => {
                                       const expanded = !!expandedImageBlocks[b.id]
-                                      const hasImage = !!b.previewUrl
+                                      const bb: any = b
+                                      const pendingPreview: string | null = bb._pendingPreviewUrl || null
+                                      const pendingFile: File | null = bb._pendingFile || null
+                                      const pendingClear: boolean = !!bb._pendingClear
+                                      const thumb = pendingClear
+                                        ? null
+                                        : pendingPreview || b.image_thumb_url || b.image_full_url || null
+                                      const full = pendingClear ? null : pendingPreview || b.image_full_url || b.image_thumb_url || null
+                                      const hasImage = !!thumb || !!full
 
                                       return (
                                         <>
@@ -733,11 +1176,13 @@ export default function SchoolSettingsPage() {
                                               {hasImage && (
                                                 <button
                                                   type="button"
-                                                  onClick={() => setPreviewUrl(b.previewUrl)}
+                                                  onClick={() => {
+                                                    if (full) setPreviewUrl(full)
+                                                  }}
                                                   className="text-xs text-indigo-700 hover:text-indigo-800 font-semibold truncate max-w-[180px]"
-                                                  title={b.file?.name || '첨부 이미지'}
+                                                  title={pendingFile?.name || b.image_name || '첨부 이미지'}
                                                 >
-                                                  {b.file?.name || '첨부 이미지'}
+                                                  {pendingFile?.name || b.image_name || '첨부 이미지'}
                                                 </button>
                                               )}
                                             </div>
@@ -752,7 +1197,7 @@ export default function SchoolSettingsPage() {
                                                 className="hidden"
                                                 onChange={(e) => {
                                                   const file = Array.from(e.target.files || []).find((f) => f.type.startsWith('image/'))
-                                                  attachImageToBlock(deviceId, active.id, b.id, file || null)
+                                                  if (file) setBlockImageDraft(deviceId, active.id, b.id, file)
                                                   e.target.value = ''
                                                 }}
                                               />
@@ -766,7 +1211,7 @@ export default function SchoolSettingsPage() {
                                               {hasImage && (
                                                 <button
                                                   type="button"
-                                                  onClick={() => attachImageToBlock(deviceId, active.id, b.id, null)}
+                                                  onClick={() => clearBlockImageDraft(deviceId, active.id, b.id)}
                                                   className="px-3 py-1.5 rounded-xl bg-white border border-gray-200 hover:bg-gray-50 text-sm font-semibold"
                                                 >
                                                   초기화
@@ -809,7 +1254,7 @@ export default function SchoolSettingsPage() {
                                                   const file = Array.from(e.dataTransfer.files || []).find((f) =>
                                                     f.type.startsWith('image/'),
                                                   )
-                                                  if (file) attachImageToBlock(deviceId, active.id, b.id, file)
+                                                  if (file) setBlockImageDraft(deviceId, active.id, b.id, file)
                                                 }}
                                               >
                                                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
@@ -821,15 +1266,17 @@ export default function SchoolSettingsPage() {
                                               </div>
 
                                               <div className="mt-2">
-                                                {b.previewUrl ? (
+                                                {thumb || full ? (
                                                   <button
                                                     type="button"
-                                                    onClick={() => setPreviewUrl(b.previewUrl)}
+                                                    onClick={() => {
+                                                      if (full) setPreviewUrl(full)
+                                                    }}
                                                     className="block w-full"
                                                   >
                                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                                     <img
-                                                      src={b.previewUrl}
+                                                      src={thumb || full || ''}
                                                       alt="첨부 이미지 미리보기"
                                                       className="w-full max-h-40 object-contain rounded-xl border border-gray-200 bg-white"
                                                     />
@@ -854,79 +1301,100 @@ export default function SchoolSettingsPage() {
                       </div>
                     ) : (
                       (() => {
-                        const assets = assetsByDeviceId[deviceId] || []
-                        const isLoadingAssets = loadingAssetsId === deviceId
-                        const isUploading = uploadingId === deviceId
-                        const isDragOver = dragOverId === deviceId
+                        const pageId = active.id
+                        const isUploading = settingsSaving
+                        const isDragOver = dragOverId === pageId
+                        const pendingPreview: string | null = active._pendingPreviewUrl || null
+                        const pendingFile: File | null = active._pendingFile || null
+                        const pendingClear: boolean = !!active._pendingClear
+                        const hasImage = pendingClear
+                          ? false
+                          : !!(pendingPreview || active.image_full_url || active.image_thumb_url || active.image_original_path)
+                        const thumb = pendingClear
+                          ? null
+                          : pendingPreview || active.image_thumb_url || active.image_full_url || null
+                        const full = pendingClear ? null : pendingPreview || active.image_full_url || active.image_thumb_url || null
 
                         return (
                           <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
                             <div className="flex items-center justify-between gap-3">
-                              <div className="text-sm font-semibold text-gray-900">디바이스 이미지</div>
-                              <button
-                                type="button"
-                                onClick={() => loadAssets(deviceId)}
-                                className="px-3 py-1.5 rounded-lg bg-white border border-gray-200 hover:bg-gray-50 text-sm font-semibold"
-                              >
-                                새로고침
-                              </button>
+                              <div className="text-sm font-semibold text-gray-900">이미지 페이지</div>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  ref={(el) => {
+                                    pageImageFileInputRefs.current[pageId] = el
+                                  }}
+                                  type="file"
+                                  accept="image/*"
+                                  disabled={isUploading}
+                                  onChange={(e) => {
+                                    const file = Array.from(e.target.files || []).find((f) => f.type.startsWith('image/'))
+                                    if (file) setPageImageDraft(deviceId, pageId, file)
+                                    e.target.value = ''
+                                  }}
+                                  className="hidden"
+                                />
+
+                                <button
+                                  type="button"
+                                  disabled={isUploading}
+                                  onClick={() => pageImageFileInputRefs.current[pageId]?.click()}
+                                  className={[
+                                    'px-3 py-1.5 rounded-xl text-sm font-semibold border shadow-sm disabled:opacity-60',
+                                    hasImage
+                                      ? 'bg-amber-50/70 border-amber-200/70 text-amber-900 hover:bg-amber-50'
+                                      : 'bg-gray-900 border-gray-900 text-white hover:bg-gray-800',
+                                  ].join(' ')}
+                                >
+                                  {isUploading ? '처리 중…' : hasImage ? '이미지 변경' : '이미지 1장 업로드'}
+                                </button>
+
+                                {hasImage && (
+                                  <button
+                                    type="button"
+                                    disabled={isUploading}
+                                    onClick={() => clearPageImageDraft(deviceId, pageId)}
+                                    className="px-3 py-1.5 rounded-xl bg-rose-100 hover:bg-rose-200 text-rose-800 text-sm font-semibold disabled:opacity-60"
+                                  >
+                                    삭제
+                                  </button>
+                                )}
+                              </div>
                             </div>
 
-                            {isLoadingAssets ? (
-                              <div className="py-6 text-center text-sm text-gray-500">불러오는 중...</div>
-                            ) : assets.length === 0 ? (
+                            {!hasImage ? (
                               <div className="mt-3 rounded-xl border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500">
                                 아직 업로드된 이미지가 없습니다.
                               </div>
                             ) : (
                               <div className="mt-3 grid grid-cols-3 sm:grid-cols-4 gap-2">
-                                {assets.map((a) => (
-                                  <div key={a.original_path} className="group relative rounded border border-gray-200 bg-white overflow-hidden">
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        if (a.full_url || a.thumb_url) setPreviewUrl(a.full_url || a.thumb_url)
-                                      }}
-                                      className="block w-full"
-                                      title={a.name}
-                                    >
-                                      {a.thumb_url ? (
-                                        // eslint-disable-next-line @next/next/no-img-element
-                                        <img src={a.thumb_url} alt={a.name} className="h-24 w-full object-cover" loading="lazy" />
-                                      ) : (
-                                        <div className="h-24 w-full flex items-center justify-center text-xs text-gray-400">미리보기 불가</div>
-                                      )}
-                                    </button>
-
-                                    <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 p-1.5 bg-white/80 backdrop-blur opacity-0 group-hover:opacity-100 transition-opacity">
-                                      <div className="text-[11px] text-gray-600 truncate min-w-0" title={a.name}>
-                                        {a.name}
-                                      </div>
-                                      <button
-                                        type="button"
-                                        onClick={async () => {
-                                          if (!confirm('해당 파일을 삭제하시겠습니까?')) return
-                                          try {
-                                            const res = await fetch(
-                                              `/api/school/device-assets?school_device_id=${encodeURIComponent(
-                                                deviceId,
-                                              )}&original_path=${encodeURIComponent(a.original_path)}`,
-                                              { method: 'DELETE', credentials: 'include' },
-                                            )
-                                            const data = await res.json().catch(() => ({}))
-                                            if (!res.ok) throw new Error(data.error || '삭제 실패')
-                                            await loadAssets(deviceId)
-                                          } catch (err: any) {
-                                            alert(err?.message || '삭제 실패')
-                                          }
-                                        }}
-                                        className="px-2 py-0.5 rounded bg-rose-100 hover:bg-rose-200 text-rose-800 text-[11px] shrink-0"
-                                      >
-                                        삭제
-                                      </button>
+                                <div className="group relative rounded border border-gray-200 bg-white overflow-hidden">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (full) setPreviewUrl(full)
+                                    }}
+                                    className="block w-full"
+                                    title={pendingFile?.name || active.image_name || '이미지'}
+                                  >
+                                    {thumb ? (
+                                      // eslint-disable-next-line @next/next/no-img-element
+                                      <img
+                                        src={thumb}
+                                        alt={pendingFile?.name || active.image_name || '이미지'}
+                                        className="h-24 w-full object-cover"
+                                        loading="lazy"
+                                      />
+                                    ) : (
+                                      <div className="h-24 w-full flex items-center justify-center text-xs text-gray-400">미리보기 불가</div>
+                                    )}
+                                  </button>
+                                  <div className="absolute inset-x-0 bottom-0 p-1.5 bg-white/80 backdrop-blur opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <div className="text-[11px] text-gray-600 truncate min-w-0" title={pendingFile?.name || active.image_name || ''}>
+                                      {pendingFile?.name || active.image_name || '이미지'}
                                     </div>
                                   </div>
-                                ))}
+                                </div>
                               </div>
                             )}
 
@@ -934,47 +1402,41 @@ export default function SchoolSettingsPage() {
                               className={[
                                 'mt-4 rounded-2xl border border-dashed p-4',
                                 isDragOver ? 'border-indigo-500 bg-indigo-50' : 'border-gray-300 bg-white',
+                                isUploading ? 'opacity-60' : '',
                               ].join(' ')}
                               onDragOver={(e) => {
                                 e.preventDefault()
-                                setDragOverId(deviceId)
+                                if (isUploading) return
+                                setDragOverId(pageId)
                               }}
-                              onDragLeave={() => setDragOverId((cur) => (cur === deviceId ? null : cur))}
+                              onDragLeave={() => setDragOverId((cur) => (cur === pageId ? null : cur))}
                               onDrop={async (e) => {
                                 e.preventDefault()
                                 setDragOverId(null)
-                                const fileList = Array.from(e.dataTransfer.files || []).filter((f) => f.type.startsWith('image/'))
-                                await uploadFiles(deviceId, fileList)
+                                if (isUploading) return
+                                const file = Array.from(e.dataTransfer.files || []).find((f) => f.type.startsWith('image/'))
+                                if (!file) return
+                                setPageImageDraft(deviceId, pageId, file)
                               }}
                             >
                               <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
                                 <div className="text-sm text-gray-700">
-                                  <div className="font-semibold">이미지를 여기로 드래그해서 업로드</div>
-                                  <div className="text-xs text-gray-500 mt-1">또는 버튼을 눌러 파일을 선택하세요.</div>
+                                  <div className="font-semibold">
+                                    {hasImage ? '이미지가 이미 등록되어 있습니다 (1장만 유지)' : '이미지를 여기로 드래그해서 업로드'}
+                                  </div>
+                                  <div className="text-xs text-gray-500 mt-1">
+                                    {hasImage ? '드래그/선택하면 기존 이미지가 변경됩니다.' : '또는 버튼을 눌러 파일을 선택하세요.'}
+                                  </div>
                                 </div>
+
                                 <div className="flex items-center gap-2">
-                                  <input
-                                    ref={(el) => {
-                                      fileInputRefs.current[deviceId] = el
-                                    }}
-                                    type="file"
-                                    multiple
-                                    accept="image/*"
-                                    disabled={isUploading}
-                                    onChange={async (e) => {
-                                      const fileList = Array.from(e.target.files || [])
-                                      await uploadFiles(deviceId, fileList)
-                                      e.target.value = ''
-                                    }}
-                                    className="hidden"
-                                  />
                                   <button
                                     type="button"
                                     disabled={isUploading}
-                                    onClick={() => fileInputRefs.current[deviceId]?.click()}
+                                    onClick={() => pageImageFileInputRefs.current[pageId]?.click()}
                                     className="px-4 py-2 rounded-xl bg-gray-900 hover:bg-gray-800 text-white text-sm font-semibold shadow-sm disabled:opacity-60"
                                   >
-                                    {isUploading ? '업로드 중…' : '이미지 업로드'}
+                                    {isUploading ? '처리 중…' : hasImage ? '이미지 변경' : '이미지 1장 업로드'}
                                   </button>
                                 </div>
                               </div>

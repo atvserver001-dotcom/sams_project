@@ -86,7 +86,7 @@ export default function ExercisesPage() {
   const fetchStudents = async () => {
     try {
       setError(null)
-      const res = await fetch(`/api/school/students?grade=${grade}&class_no=${classNo}`)
+      const res = await fetch(`/api/school/students?year=${year}&grade=${grade}&class_no=${classNo}`)
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || '학생 조회 실패')
       setStudents(data.students as StudentRow[])
@@ -100,7 +100,7 @@ export default function ExercisesPage() {
   useEffect(() => {
     fetchStudents()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [grade, classNo])
+  }, [grade, classNo, year])
 
   const fetchExercises = async (yearValue: number, studs: StudentRow[]) => {
     try {

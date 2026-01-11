@@ -131,6 +131,7 @@ export async function GET(request: NextRequest) {
     .from('students')
     .select('id, student_no, name')
     .eq('school_id', schoolId)
+    .eq('year', year) // 기준 학년도 학생만 조회
     .eq('grade', grade)
     .eq('class_no', class_no)
     .order('student_no', { ascending: true })

@@ -37,10 +37,17 @@ interface ExerciseRow {
 }
 
 export default function ExercisesPage() {
+  // 학년도: 3~12월은 해당 연도, 1~2월은 전년도
+  const computeDefaultYear = () => {
+    const now = new Date()
+    const m = now.getMonth() + 1
+    return (m === 1 || m === 2) ? now.getFullYear() - 1 : now.getFullYear()
+  }
+
   const [grade, setGrade] = useState<number>(1)
   const [classNo, setClassNo] = useState<number>(1)
   const [schoolType, setSchoolType] = useState<1 | 2 | 3>(1)
-  const [year, setYear] = useState<number>(new Date().getFullYear())
+  const [year, setYear] = useState<number>(computeDefaultYear())
   const [category, setCategory] = useState<CategoryFilter>('all')
 
   const [students, setStudents] = useState<StudentRow[]>([])
@@ -63,7 +70,7 @@ export default function ExercisesPage() {
         if (res.ok && data?.school?.school_type) {
           const t = Number(data.school.school_type)
           if (t === 1 || t === 2 || t === 3) {
-            setSchoolType(t as 1|2|3)
+            setSchoolType(t as 1 | 2 | 3)
             setGrade((g) => {
               const maxG = t === 1 ? 6 : 3
               return Math.min(Math.max(1, g), maxG)
@@ -71,7 +78,7 @@ export default function ExercisesPage() {
             setClassNo((c) => Math.min(Math.max(1, c), 10))
           }
         }
-      } catch {}
+      } catch { }
     }
     loadSchool()
   }, [])
@@ -86,7 +93,7 @@ export default function ExercisesPage() {
     } catch (e: any) {
       setError(e.message)
     } finally {
-      
+
     }
   }
 
@@ -127,7 +134,7 @@ export default function ExercisesPage() {
       setRows(mapped)
       setError(e.message)
     } finally {
-      
+
     }
   }
 
@@ -145,7 +152,7 @@ export default function ExercisesPage() {
   const monthCellPx = 56 // 표 월별 셀 고정 폭(px)
   const contentKey = useMemo(() => `${year}-${grade}-${classNo}-${String(category)}`, [year, grade, classNo, category])
 
-  
+
 
   // 칼로리는 서버 record_type=5 값을 그대로 사용
 
@@ -178,7 +185,7 @@ export default function ExercisesPage() {
     return max || 1
   }, [rows])
 
-  
+
 
   return (
     <div className="space-y-6 text-white">
@@ -195,10 +202,16 @@ export default function ExercisesPage() {
               onChange={(e) => onChangeYear(Number(e.target.value))}
               className="block w-36 h-12 px-4 rounded-lg border-2 border-indigo-300 bg-white shadow text-lg font-semibold text-center text-gray-900 focus:outline-none outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300 hover:border-indigo-300 active:border-indigo-300"
             >
-              {Array.from({ length: 5 }).map((_, i) => {
-                const y = new Date().getFullYear() - i
-                return <option key={y} value={y}>{y}년</option>
-              })}
+              {(() => {
+                const base = computeDefaultYear()
+                const years: number[] = []
+                for (let y = base + 1; y >= base - 5; y--) {
+                  years.push(y)
+                }
+                return years.map((y) => (
+                  <option key={y} value={y}>{y}년</option>
+                ))
+              })()}
             </select>
           </div>
 
@@ -394,7 +407,7 @@ export default function ExercisesPage() {
               const barW = Math.max(2, Math.floor((width - 24) / 12))
               const gap = Math.max(2, Math.floor((width - 24 - barW * 12) / 11))
 
-              
+
 
               // 카테고리별 공통: 운동시간 바 차트 + BPM 라인 오버레이
               return (
@@ -403,7 +416,7 @@ export default function ExercisesPage() {
                     <div className="text-sm font-semibold text-gray-900">
                       {num}. {s ? s.name : `${num}번 학생`}
                     </div>
-                    
+
                   </div>
                   <div className="flex items-center gap-10 justify-center">
                     {/* 왼쪽: 운동시간 바 차트 (카테고리≠전체일 때 정확도 캡 오버레이) */}
@@ -411,16 +424,16 @@ export default function ExercisesPage() {
                       <div className="mb-1 text-xs text-gray-600 flex items-center gap-3">
                         {category !== 'all' ? (
                           <>
-                            <span className="flex items-center gap-1 text-[11px] text-gray-600"><span className="inline-block w-3 h-2 rounded-sm bg-indigo-400"/> 운동시간</span>
-                            <span className="flex items-center gap-1 text-[11px] text-gray-600"><span className="inline-block w-3 h-2 rounded-sm bg-teal-600"/> 정확도</span>
-                            <span className="flex items-center gap-1 text-[11px] text-gray-600"><span className="inline-block w-3 h-2 rounded-sm bg-yellow-500"/> 칼로리</span>
+                            <span className="flex items-center gap-1 text-[11px] text-gray-600"><span className="inline-block w-3 h-2 rounded-sm bg-indigo-400" /> 운동시간</span>
+                            <span className="flex items-center gap-1 text-[11px] text-gray-600"><span className="inline-block w-3 h-2 rounded-sm bg-teal-600" /> 정확도</span>
+                            <span className="flex items-center gap-1 text-[11px] text-gray-600"><span className="inline-block w-3 h-2 rounded-sm bg-yellow-500" /> 칼로리</span>
                           </>
                         ) : (
                           <>
-                            <span className="flex items-center gap-1 text-[11px] text-gray-600"><span className="inline-block w-3 h-2 rounded-sm bg-[#2563eb]"/> 근력</span>
-                            <span className="flex items-center gap-1 text-[11px] text-gray-600"><span className="inline-block w-3 h-2 rounded-sm bg-[#16a34a]"/> 지구력</span>
-                            <span className="flex items-center gap-1 text-[11px] text-gray-600"><span className="inline-block w-3 h-2 rounded-sm bg-[#ec4899]"/> 유연성</span>
-                            <span className="flex items-center gap-1 text-[11px] text-gray-600"><span className="inline-block w-3 h-2 rounded-sm bg-yellow-500"/> 칼로리</span>
+                            <span className="flex items-center gap-1 text-[11px] text-gray-600"><span className="inline-block w-3 h-2 rounded-sm bg-[#2563eb]" /> 근력</span>
+                            <span className="flex items-center gap-1 text-[11px] text-gray-600"><span className="inline-block w-3 h-2 rounded-sm bg-[#16a34a]" /> 지구력</span>
+                            <span className="flex items-center gap-1 text-[11px] text-gray-600"><span className="inline-block w-3 h-2 rounded-sm bg-[#ec4899]" /> 유연성</span>
+                            <span className="flex items-center gap-1 text-[11px] text-gray-600"><span className="inline-block w-3 h-2 rounded-sm bg-yellow-500" /> 칼로리</span>
                           </>
                         )}
                       </div>
@@ -449,7 +462,7 @@ export default function ExercisesPage() {
                                 const h2 = Math.round(h * (total > 0 ? c2 / total : 0))
                                 const h3 = Math.max(0, h - h1 - h2)
                                 let yCursor = height - 3 - h
-                                const parts: {h:number; color:string; label:string}[] = [
+                                const parts: { h: number; color: string; label: string }[] = [
                                   { h: h1, color: '#2563eb', label: '근력' },
                                   { h: h2, color: '#16a34a', label: '심폐' },
                                   { h: h3, color: '#ec4899', label: '유연성' },
@@ -536,8 +549,8 @@ export default function ExercisesPage() {
                     {/* 오른쪽: 심박수 라인 차트 */}
                     <div>
                       <div className="mb-1 text-xs text-gray-600 flex items-center gap-3">
-                        <span className="flex items-center gap-1 text-[11px] text-gray-600"><span className="inline-block w-3 h-1 bg-indigo-500"/> 평균 bpm</span>
-                        <span className="flex items-center gap-1 text-[11px] text-gray-600"><span className="inline-block w-3 h-1 bg-rose-500"/> 최대 bpm</span>
+                        <span className="flex items-center gap-1 text-[11px] text-gray-600"><span className="inline-block w-3 h-1 bg-indigo-500" /> 평균 bpm</span>
+                        <span className="flex items-center gap-1 text-[11px] text-gray-600"><span className="inline-block w-3 h-1 bg-rose-500" /> 최대 bpm</span>
                       </div>
                       <svg width={width} height={height} className="block">
                         <line x1="8" y1={height - 3} x2={width - 8} y2={height - 3} stroke="#E5E7EB" strokeWidth="1" />

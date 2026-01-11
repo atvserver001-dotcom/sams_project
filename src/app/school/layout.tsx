@@ -90,7 +90,7 @@ export default function SchoolLayout({ children }: { children: React.ReactNode }
     const refresh = async () => {
       try {
         await fetch('/api/admin/act-as', { method: 'POST', credentials: 'include' })
-      } catch {}
+      } catch { }
     }
     if (isAdmin) {
       // 진입 즉시 1회 연장 후, 30분 주기로 연장
@@ -116,8 +116,11 @@ export default function SchoolLayout({ children }: { children: React.ReactNode }
                   <Link href="/school/students" className="text-gray-800 hover:text-gray-900 hover:underline">학생 정보입력</Link>
                   {menuContents.length > 0 && <span className="text-gray-300">|</span>}
                   {!loadingContents && menuContents.map((c, idx) => {
+                    const name = c.name.replace(/\s/g, '')
+                    const isExercises = name.includes('운동기록관리')
+                    const isPaps = name.includes('PAPS기록관리')
                     const expired = isExpiredContent(c)
-                    const isExercises = c.name === '운동기록관리'
+
                     if (expired) {
                       return (
                         <button
@@ -142,6 +145,18 @@ export default function SchoolLayout({ children }: { children: React.ReactNode }
                         </Link>
                       )
                     }
+                    if (isPaps) {
+                      return (
+                        <Link
+                          key={`${c.school_content_id}-${idx}`}
+                          href="/school/paps"
+                          className="text-gray-800 hover:text-gray-900 hover:underline"
+                          title={c.name}
+                        >
+                          {c.name}
+                        </Link>
+                      )
+                    }
                     // 현재 컨텐츠별 상세 페이지가 없으므로, 우선 메뉴 노출 + 클릭 시 안내
                     return (
                       <button
@@ -158,8 +173,11 @@ export default function SchoolLayout({ children }: { children: React.ReactNode }
 
                   {menuDevices.length > 0 && <span className="text-gray-300">|</span>}
                   {!loadingDevices && menuDevices.map((d, idx) => {
+                    const name = d.device_name.replace(/\s/g, '')
+                    const isExercises = name.includes('운동기록관리')
+                    const isPaps = name.includes('PAPS기록관리')
                     const expired = isExpired(d)
-                    const isExercises = d.device_name === '운동기록관리'
+
                     if (expired) {
                       return (
                         <button
@@ -174,6 +192,13 @@ export default function SchoolLayout({ children }: { children: React.ReactNode }
                     if (isExercises) {
                       return (
                         <Link key={`${d.device_id}-${idx}`} href="/school/exercises" className="text-gray-800 hover:text-gray-900 hover:underline">
+                          {d.device_name}
+                        </Link>
+                      )
+                    }
+                    if (isPaps) {
+                      return (
+                        <Link key={`${d.device_id}-${idx}`} href="/school/paps" className="text-gray-800 hover:text-gray-900 hover:underline">
                           {d.device_name}
                         </Link>
                       )

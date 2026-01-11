@@ -145,11 +145,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ rows: [] })
   }
 
+  // 학년도 조회 조건: 당해 3~12월 OR 익년 1~2월
   const baseQuery = supabaseAdmin
     .from('exercise_records')
     .select('student_id, exercise_type, year, month, avg_duration_seconds, avg_accuracy, avg_bpm, avg_max_bpm, avg_calories, record_count')
     .in('student_id', studentIds)
-    .eq('year', year)
+    .or(`and(year.eq.${year},month.gte.3),and(year.eq.${year + 1},month.lte.2)`)
 
   const typeMap: Record<1 | 2 | 3 | 4, 'strength' | 'endurance' | 'flexibility'> = {
     1: 'strength',

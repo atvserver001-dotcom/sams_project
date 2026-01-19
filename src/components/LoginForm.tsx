@@ -83,11 +83,12 @@ export default function LoginForm() {
           <div>
             <div className="flex justify-center">
               <Image
-                src="/image/Spopark_Outline_Red.svg"
+                src="/image/logo_atv.svg?v=202020"
                 alt="스포파크 로고"
                 width={240}
                 height={72}
                 className="h-12 w-auto md:h-14"
+                style={{ color: 'rgba(32, 32, 32, 0)' }}
                 priority
               />
             </div>

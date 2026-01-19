@@ -5,6 +5,7 @@ import SchoolRoute from '@/components/SchoolRoute'
 import AdminLogoutButton from '@/components/AdminLogoutButton'
 import { useAuth } from '@/contexts/AuthContext'
 import BackToAdminButton from '@/components/BackToAdminButton'
+import Image from 'next/image'
 
 type SchoolDevice = {
   device_id: string
@@ -111,7 +112,17 @@ export default function SchoolLayout({ children }: { children: React.ReactNode }
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex justify-between h-16">
               <div className="flex items-center space-x-6">
-                <span className="text-lg font-semibold text-gray-900">운영툴</span>
+                <div className="flex items-center gap-2">
+                  <Image
+                    src="/image/logo_atv.svg"
+                    alt="스포파크 로고"
+                    width={120}
+                    height={40}
+                    className="h-7 w-auto"
+                    priority
+                  />
+                  <span className="text-lg font-semibold text-gray-900">운영툴</span>
+                </div>
                 <div className="flex items-center ml-10 gap-6 md:gap-8 text-sm font-medium">
                   <Link href="/school/students" className="text-gray-800 hover:text-gray-900 hover:underline">학생 정보입력</Link>
                   {menuContents.length > 0 && <span className="text-gray-300">|</span>}

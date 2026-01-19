@@ -2,6 +2,7 @@ import React from 'react'
 import AdminRoute from '@/components/AdminRoute'
 import Link from 'next/link'
 import AdminLogoutButton from '@/components/AdminLogoutButton'
+import Image from 'next/image'
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -11,7 +12,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex justify-between h-16">
               <div className="flex items-center space-x-6">
-                <span className="text-lg font-semibold text-gray-900">관리자 페이지</span>
+                <div className="flex items-center gap-2">
+                  <Image
+                    src="/image/logo_atv.svg"
+                    alt="스포파크 로고"
+                    width={120}
+                    height={40}
+                    className="h-7 w-auto"
+                    priority
+                  />
+                  <span className="text-lg font-semibold text-gray-900">관리자 페이지</span>
+                </div>
                 <div className="flex items-center ml-10 gap-6 md:gap-8 text-sm font-medium">
                   <Link href="/admin/accounts" className="text-gray-800 hover:text-gray-900 hover:underline">계정관리</Link>
                   <span className="text-gray-300">|</span>

@@ -16,8 +16,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SPOPARK",
-  description: "SPOPARK",
+  title: "atv.학생운동기록관리",
+  description: "atv.학생운동기록관리",
   icons: {
     icon: `/favicon.ico?v=${FAVICON_VERSION}`,
     shortcut: `/favicon.ico?v=${FAVICON_VERSION}`,

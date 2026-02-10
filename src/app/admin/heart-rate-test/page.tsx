@@ -259,7 +259,7 @@ export default function HeartRateTestPage() {
         <div>
           <h1 className="text-2xl font-bold text-white">심박계 테스트 - Fitness Bridge</h1>
           <p className="mt-1 text-sm text-white/80">
-            "시작" 버튼을 클릭하면 로컬 Fitness Bridge 서버에 연결되어 실시간 심박수 데이터를 수신합니다.
+            &quot;시작&quot; 버튼을 클릭하면 로컬 Fitness Bridge 서버에 연결되어 실시간 심박수 데이터를 수신합니다.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -297,7 +297,7 @@ export default function HeartRateTestPage() {
                     node index.js 또는 fitness-bridge.exe 실행
                   </p>
                   <p className="mt-2">2. 허브가 Fitness Bridge에 연결되어 있는지 확인하세요</p>
-                  <p className="mt-2">3. 아래 "시작" 버튼을 클릭하세요</p>
+                  <p className="mt-2">3. 아래 &quot;시작&quot; 버튼을 클릭하세요</p>
                 </div>
               </div>
             </div>

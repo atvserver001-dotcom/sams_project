@@ -90,8 +90,9 @@ export default function ExercisesPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || '학생 조회 실패')
       setStudents(data.students as StudentRow[])
-    } catch (e: any) {
-      setError(e.message)
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e)
+      setError(message)
     } finally {
 
     }
@@ -132,7 +133,7 @@ export default function ExercisesPage() {
           minutes_c3: [...empty12],
         }))
       setRows(mapped)
-      setError(e.message)
+      setError(e instanceof Error ? e.message : String(e))
     } finally {
 
     }

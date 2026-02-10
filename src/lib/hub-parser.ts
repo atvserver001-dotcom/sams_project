@@ -41,9 +41,7 @@ export const PARSER_TAG = 'hr-parser-web-v1'
 
 // --- Helpers for Uint8Array ---
 
-function u8(b: number) {
-  return b & 0xff
-}
+
 
 function beU16(view: DataView, pos: number) {
   return view.getUint16(pos, false)
@@ -206,26 +204,7 @@ export function batteryPercentFromRaw(raw: number | null | undefined) {
   return Math.round((v / 255) * 100)
 }
 
-function macToId7(mac: string) {
-  try {
-    const cleaned = mac.replaceAll(':', '').replaceAll('-', '').trim()
-    if (!/^[0-9a-fA-F]{12}$/.test(cleaned)) return null
-    const low24 = parseInt(cleaned.slice(6), 16)
-    if (!Number.isFinite(low24)) return null
-    return low24 % 10_000_000
-  } catch {
-    return null
-  }
-}
 
-function bleDeviceIdToId7(hex8: string) {
-  const cleaned = hex8.replaceAll(':', '').replaceAll('-', '').trim()
-  if (!/^[0-9a-fA-F]{8}$/.test(cleaned)) return null
-  const be = (parseInt(cleaned, 16) >>> 0)
-  if (be >= 0 && be <= 9_999_999) return be
-  const low24 = be & 0xFFFFFF
-  return low24 % 10_000_000
-}
 
 export function parseHub900BleHeartRate(mergeBytes: Uint8Array, blePacket: Uint8Array) {
   if (blePacket.length < 12) return null
@@ -352,10 +331,10 @@ export function parseHdlcFrames(input: Uint8Array) {
   const FLAG = 0x7e
   const ESC = 0x7d
 
-  let firstFlag = input.indexOf(FLAG)
+  const firstFlag = input.indexOf(FLAG)
   if (firstFlag < 0) return { frames, rest: input }
 
-  let lastFlag = input.lastIndexOf(FLAG)
+  const lastFlag = input.lastIndexOf(FLAG)
   if (lastFlag === firstFlag) return { frames, rest: input.subarray(firstFlag) }
 
   let i = firstFlag + 1

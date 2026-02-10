@@ -211,8 +211,9 @@ export default function SchoolSettingsPage() {
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || '업로드 실패')
       await loadAssets(schoolDeviceId)
-    } catch (err: any) {
-      alert(err?.message || '업로드 실패')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err)
+      alert(message || '업로드 실패')
     } finally {
       setUploadingId(null)
     }
@@ -248,8 +249,9 @@ export default function SchoolSettingsPage() {
       if (!res.ok) throw new Error(data.error || '업로드 실패')
 
       await loadAssets(schoolDeviceId)
-    } catch (err: any) {
-      alert(err?.message || '변경 실패')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err)
+      alert(message || '변경 실패')
     } finally {
       setUploadingId(null)
     }
@@ -351,9 +353,10 @@ export default function SchoolSettingsPage() {
     setSettingsModalOpen(true)
     try {
       await loadDevicePages(id)
-    } catch (e: any) {
+    } catch (e: unknown) {
       setSettingsLoading(false)
-      alert(e?.message || '페이지 불러오기 실패')
+      const message = e instanceof Error ? e.message : String(e)
+      alert(message || '페이지 불러오기 실패')
     }
   }
 
@@ -388,7 +391,7 @@ export default function SchoolSettingsPage() {
   const revokePreview = (url: string | null | undefined) => {
     try {
       if (url) URL.revokeObjectURL(url)
-    } catch {}
+    } catch { }
   }
 
   const ensurePages = (schoolDeviceId: string) => {
@@ -767,8 +770,9 @@ export default function SchoolSettingsPage() {
       await loadDevicePages(schoolDeviceId)
       setSettingsDirty(false)
       alert('저장 완료')
-    } catch (e: any) {
-      alert(e?.message || '저장 실패')
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e)
+      alert(message || '저장 실패')
     } finally {
       setSettingsSaving(false)
     }
@@ -853,71 +857,71 @@ export default function SchoolSettingsPage() {
                       const ord = (counter.get(d.device_name) || 0) + 1
                       counter.set(d.device_name, ord)
 
-                    const contentHex = resolveHex(d.content_color_hex)
-                    const cardBg = contentHex || undefined
-                    const cardBorder = contentHex ? 'rgba(0,0,0,0.08)' : undefined
+                      const contentHex = resolveHex(d.content_color_hex)
+                      const cardBg = contentHex || undefined
+                      const cardBorder = contentHex ? 'rgba(0,0,0,0.08)' : undefined
 
-                    return (
-                      <div
-                        key={d.id}
-                        className="rounded-2xl border border-gray-200 bg-white p-5 text-gray-900 shadow-sm hover:shadow-md transition-shadow"
-                        style={{
-                          backgroundColor: cardBg,
-                          borderColor: cardBorder,
-                        }}
-                      >
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              {d.device_icon_url ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img
-                                  src={d.device_icon_url}
-                                  alt={`${d.device_name} 아이콘`}
-                                  className="h-9 w-9 rounded-xl object-cover border border-gray-200"
-                                />
-                              ) : (
-                                <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-slate-900 to-slate-700 shadow-sm" />
-                              )}
-                              <div className="min-w-0">
-                                <div className="text-sm font-semibold truncate">
-                                  {d.device_name} <span className="text-gray-600 font-semibold">#{ord}</span>
-                                </div>
-                                <div className="mt-0.5 flex items-center gap-2">
-                                  {d.memo ? (
-                                    <div className="text-xs text-gray-600 truncate" title={d.memo}>
-                                      {d.memo}
-                                    </div>
-                                  ) : (
-                                    <div className="text-xs text-gray-500">메모 없음</div>
-                                  )}
-                                  <button
-                                    type="button"
-                                    onClick={() => openMemoModal(d.id, `${d.device_name} #${ord}`, d.memo)}
-                                    className="px-2 py-0.5 rounded border border-gray-300 bg-white/80 text-gray-700 hover:bg-white text-[11px] shadow-sm"
-                                  >
-                                    메모
-                                  </button>
+                      return (
+                        <div
+                          key={d.id}
+                          className="rounded-2xl border border-gray-200 bg-white p-5 text-gray-900 shadow-sm hover:shadow-md transition-shadow"
+                          style={{
+                            backgroundColor: cardBg,
+                            borderColor: cardBorder,
+                          }}
+                        >
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                {d.device_icon_url ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img
+                                    src={d.device_icon_url}
+                                    alt={`${d.device_name} 아이콘`}
+                                    className="h-9 w-9 rounded-xl object-cover border border-gray-200"
+                                  />
+                                ) : (
+                                  <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-slate-900 to-slate-700 shadow-sm" />
+                                )}
+                                <div className="min-w-0">
+                                  <div className="text-sm font-semibold truncate">
+                                    {d.device_name} <span className="text-gray-600 font-semibold">#{ord}</span>
+                                  </div>
+                                  <div className="mt-0.5 flex items-center gap-2">
+                                    {d.memo ? (
+                                      <div className="text-xs text-gray-600 truncate" title={d.memo}>
+                                        {d.memo}
+                                      </div>
+                                    ) : (
+                                      <div className="text-xs text-gray-500">메모 없음</div>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => openMemoModal(d.id, `${d.device_name} #${ord}`, d.memo)}
+                                      className="px-2 py-0.5 rounded border border-gray-300 bg-white/80 text-gray-700 hover:bg-white text-[11px] shadow-sm"
+                                    >
+                                      메모
+                                    </button>
+                                  </div>
                                 </div>
                               </div>
                             </div>
-                          </div>
-                          <div className="flex shrink-0 items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                ensurePages(d.id)
-                                await openSettingsModal(d.id, `${d.device_name} #${ord}`)
-                              }}
-                              className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium shadow-sm"
-                            >
-                              설정
-                            </button>
+                            <div className="flex shrink-0 items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  ensurePages(d.id)
+                                  await openSettingsModal(d.id, `${d.device_name} #${ord}`)
+                                }}
+                                className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium shadow-sm"
+                              >
+                                설정
+                              </button>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    )
-                  })
+                      )
+                    })
                   })()}
                 </div>
               </div>
@@ -1057,57 +1061,57 @@ export default function SchoolSettingsPage() {
                       <div className="sticky top-0 z-30 -mx-6 px-6 pt-0 pb-3 bg-white/95 backdrop-blur border-b border-gray-200">
                         <div className="rounded-2xl border border-gray-200 bg-gray-50 p-2 shadow-sm">
                           <div className="grid grid-cols-4 gap-2">
-                        {pages.map((p, idx) => {
-                          const selected = (active?.id || null) === p.id
-                          return (
-                            <div key={p.id} className="relative w-full">
-                              <button
-                                type="button"
-                                onClick={async () => {
-                                  setActivePageId(p.id)
-                                }}
-                                className={[
-                                  'w-full px-3 py-2 rounded-2xl text-sm font-semibold border flex items-center gap-2 shadow-sm pr-9 justify-start',
-                                  selected
-                                    ? 'bg-gray-900 text-white border-gray-900'
-                                    : 'bg-white text-gray-800 border-gray-200 hover:bg-white',
-                                ].join(' ')}
-                              >
-                                <span
-                                  className={[
-                                    'inline-flex items-center justify-center h-6 w-6 rounded-full text-xs font-extrabold',
-                                    selected ? 'bg-white/15 text-white' : 'bg-gray-900 text-white',
-                                  ].join(' ')}
-                                >
-                                  {idx + 1}
-                                </span>
-                                <span className="max-w-[140px] truncate" title={p.name || `${idx + 1}페이지`}>
-                                  {p.name || `${idx + 1}페이지`}
-                                </span>
-                              </button>
+                            {pages.map((p, idx) => {
+                              const selected = (active?.id || null) === p.id
+                              return (
+                                <div key={p.id} className="relative w-full">
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      setActivePageId(p.id)
+                                    }}
+                                    className={[
+                                      'w-full px-3 py-2 rounded-2xl text-sm font-semibold border flex items-center gap-2 shadow-sm pr-9 justify-start',
+                                      selected
+                                        ? 'bg-gray-900 text-white border-gray-900'
+                                        : 'bg-white text-gray-800 border-gray-200 hover:bg-white',
+                                    ].join(' ')}
+                                  >
+                                    <span
+                                      className={[
+                                        'inline-flex items-center justify-center h-6 w-6 rounded-full text-xs font-extrabold',
+                                        selected ? 'bg-white/15 text-white' : 'bg-gray-900 text-white',
+                                      ].join(' ')}
+                                    >
+                                      {idx + 1}
+                                    </span>
+                                    <span className="max-w-[140px] truncate" title={p.name || `${idx + 1}페이지`}>
+                                      {p.name || `${idx + 1}페이지`}
+                                    </span>
+                                  </button>
 
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.preventDefault()
-                                  e.stopPropagation()
-                                  if (!confirm(`${p.name || `${idx + 1}페이지`}를 삭제하시겠습니까?`)) return
-                                  removeSettingsPage(deviceId, p.id)
-                                }}
-                                className={[
-                                  'absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 inline-flex items-center justify-center rounded-full border text-xs font-bold',
-                                  selected
-                                    ? 'border-white/20 bg-white/10 text-white hover:bg-white/15'
-                                    : 'border-gray-200 bg-white/70 text-rose-600 hover:bg-rose-50',
-                                ].join(' ')}
-                                aria-label={`${idx + 1}페이지 삭제`}
-                                title="페이지 삭제"
-                              >
-                                <XMarkIcon className="h-4 w-4" aria-hidden="true" />
-                              </button>
-                            </div>
-                          )
-                        })}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.preventDefault()
+                                      e.stopPropagation()
+                                      if (!confirm(`${p.name || `${idx + 1}페이지`}를 삭제하시겠습니까?`)) return
+                                      removeSettingsPage(deviceId, p.id)
+                                    }}
+                                    className={[
+                                      'absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 inline-flex items-center justify-center rounded-full border text-xs font-bold',
+                                      selected
+                                        ? 'border-white/20 bg-white/10 text-white hover:bg-white/15'
+                                        : 'border-gray-200 bg-white/70 text-rose-600 hover:bg-rose-50',
+                                    ].join(' ')}
+                                    aria-label={`${idx + 1}페이지 삭제`}
+                                    title="페이지 삭제"
+                                  >
+                                    <XMarkIcon className="h-4 w-4" aria-hidden="true" />
+                                  </button>
+                                </div>
+                              )
+                            })}
                           </div>
                         </div>
                       </div>

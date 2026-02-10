@@ -96,9 +96,10 @@ export default function HeartRateTestPage() {
           connect()
         }, 3000)
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       setState('error')
-      setStatusText(`연결 실패: ${err.message}`)
+      const message = err instanceof Error ? err.message : String(err)
+      setStatusText(`연결 실패: ${message}`)
     }
   }
 
@@ -129,12 +130,28 @@ export default function HeartRateTestPage() {
     }
   }
 
-  const handleFitnessBridgeMessage = (msg: any) => {
+  interface FitnessBridgeMessage {
+    type?: string
+    sessionActive?: boolean
+    message?: string
+    dataType?: string
+    data?: {
+      heartRate?: number
+      timestamp?: string
+      deviceId?: string | number
+      battery?: number
+      [key: string]: unknown
+    }
+  }
+
+  const handleFitnessBridgeMessage = (msg: FitnessBridgeMessage) => {
     const ts = new Date().toISOString()
 
     // 상태 메시지
     if (msg.type === 'status') {
-      setSessionActive(msg.sessionActive)
+      if (msg.sessionActive !== undefined) {
+        setSessionActive(msg.sessionActive)
+      }
       if (msg.message) {
         setStatusText(msg.message)
       }
@@ -247,8 +264,8 @@ export default function HeartRateTestPage() {
         </div>
         <div className="flex items-center gap-3">
           <span className={`inline-flex items-center rounded-full px-3 py-1.5 text-xs font-semibold ${state === 'open' ? 'bg-emerald-100 text-emerald-800' :
-              state === 'connecting' ? 'bg-indigo-100 text-indigo-800' :
-                state === 'error' ? 'bg-rose-100 text-rose-800' : 'bg-gray-100 text-gray-700'
+            state === 'connecting' ? 'bg-indigo-100 text-indigo-800' :
+              state === 'error' ? 'bg-rose-100 text-rose-800' : 'bg-gray-100 text-gray-700'
             }`}>
             {state === 'open' ? '✅ 연결됨' :
               state === 'connecting' ? '🔄 연결 중...' :
@@ -335,7 +352,7 @@ export default function HeartRateTestPage() {
             {statusText}
           </div>
           <div className="flex gap-2">
-            {state === 'idle' || state === 'error' || state === 'closed' ? (
+            {state === 'idle' || state === 'error' || state === 'closed' || state === 'connecting' ? (
               <button
                 onClick={connect}
                 disabled={state === 'connecting'}
@@ -382,7 +399,7 @@ export default function HeartRateTestPage() {
             <span className="font-semibold text-gray-700">필터:</span>
             <select
               value={filterTech}
-              onChange={e => setFilterTech(e.target.value as any)}
+              onChange={e => setFilterTech(e.target.value as 'all' | 'ANT' | 'BLE')}
               className="border-gray-300 rounded h-8 text-xs"
             >
               <option value="all">전체</option>

@@ -42,7 +42,7 @@ export default function IngestTestPage() {
     const load = async () => {
       try {
         const res = await fetch('/api/school/info', { credentials: 'include' })
-        const data: SchoolInfoResponse = await res.json().catch(() => ({} as any))
+        const data: SchoolInfoResponse = await res.json().catch(() => ({}))
         if (res.ok && data.school) {
           if (data.school.recognition_key) {
             setRecognitionKey(data.school.recognition_key)
@@ -93,8 +93,9 @@ export default function IngestTestPage() {
       } else {
         setMessage(`성공: ${JSON.stringify(data)}`)
       }
-    } catch (e: any) {
-      setMessage(`오류: ${e?.message || '요청 실패'}`)
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : '요청 실패'
+      setMessage(`오류: ${message}`)
     } finally {
       setLoading(false)
     }

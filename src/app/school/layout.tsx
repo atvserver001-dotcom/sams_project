@@ -87,7 +87,7 @@ export default function SchoolLayout({ children }: { children: React.ReactNode }
 
   // 관리자일 때 acting 컨텍스트 주기적 연장
   useEffect(() => {
-    let timer: any
+    let timer: NodeJS.Timeout | null = null
     const refresh = async () => {
       try {
         await fetch('/api/admin/act-as', { method: 'POST', credentials: 'include' })

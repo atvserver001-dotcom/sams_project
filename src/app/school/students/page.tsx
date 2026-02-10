@@ -44,7 +44,7 @@ export default function StudentsPage() {
         if (res.ok && data?.school?.school_type) {
           const t = Number(data.school.school_type)
           if (t === 1 || t === 2 || t === 3) {
-            setSchoolType(t as 1|2|3)
+            setSchoolType(t as 1 | 2 | 3)
             // 학년/반 기본값을 유효 범위로 보정
             setGrade((g) => {
               const maxG = t === 1 ? 6 : 3
@@ -53,12 +53,12 @@ export default function StudentsPage() {
             setClassNo((c) => Math.min(Math.max(1, c), 10))
           }
         }
-      } catch {}
+      } catch { }
     }
     loadSchool()
   }, [])
 
- 
+
   const fetchStudents = useCallback(async () => {
     try {
       setError(null)
@@ -66,13 +66,14 @@ export default function StudentsPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || '학생 조회 실패')
       setStudents(data.students as StudentRow[])
-    } catch (e: any) {
-      setError(e.message)
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e)
+      setError(message)
     } finally {
     }
   }, [year, grade, classNo])
 
-  
+
 
   useEffect(() => {
     fetchStudents()
@@ -373,7 +374,7 @@ function StudentDialog({ open, onClose, initial, year, grade, classNo, onSaved }
     // 번호가 변경되고, 수정 모드일 때에는 충돌 번호가 있어도 "이동" 되도록 처리
     if (isEdit && numberChanged && initial) {
       // 현재 학급의 학생 목록 조회
-      let list: any[] = []
+      let list: StudentRow[] = []
       try {
         const listRes = await fetch(`/api/school/students?year=${year}&grade=${grade}&class_no=${classNo}`, { credentials: 'include' })
         const listData = await listRes.json().catch(() => ({}))
@@ -382,15 +383,15 @@ function StudentDialog({ open, onClose, initial, year, grade, classNo, onSaved }
         list = []
       }
 
-      const currentId = (initial as any).id
-      const target = list.find((st: any) => st.student_no === parsedNo && st.id !== currentId) || null
+      const currentId = initial.id
+      const target = list.find(st => st.student_no === parsedNo && st.id !== currentId) || null
 
       if (target) {
         // 대상 번호에 이미 학생이 있는 경우: 번호 스왑 처리
         // 1) 사용 가능한 임시 번호(buffer)를 찾는다 (1~50 범위)
         let bufferNo: number | null = null
         for (let n = 1; n <= 50; n++) {
-          if (!list.some((st: any) => st.student_no === n)) {
+          if (!list.some(st => st.student_no === n)) {
             bufferNo = n
             break
           }
@@ -450,7 +451,7 @@ function StudentDialog({ open, onClose, initial, year, grade, classNo, onSaved }
     // 신규 생성(학생데이터가 없던 번호에서 시작) + 번호 변경인 경우에도
     // 대상 번호에 학생이 있으면 스왑되도록 처리
     if (!isEdit && numberChanged && originalNo != null) {
-      let list: any[] = []
+      let list: StudentRow[] = []
       try {
         const listRes = await fetch(`/api/school/students?year=${year}&grade=${grade}&class_no=${classNo}`, { credentials: 'include' })
         const listData = await listRes.json().catch(() => ({}))
@@ -459,7 +460,7 @@ function StudentDialog({ open, onClose, initial, year, grade, classNo, onSaved }
         list = []
       }
 
-      const target = list.find((st: any) => st.student_no === parsedNo) || null
+      const target = list.find(st => st.student_no === parsedNo) || null
 
       if (target) {
         // 1) 대상 학생을 원래 번호(originalNo)로 이동

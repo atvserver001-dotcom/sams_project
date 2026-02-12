@@ -123,9 +123,9 @@ export default function SchoolLayout({ children }: { children: React.ReactNode }
                   />
                   <span className="text-lg font-semibold text-gray-900">운영툴</span>
                 </div>
-                <div className="flex items-center ml-10 gap-6 md:gap-8 text-sm font-medium">
+                <div className="flex items-center ml-10 gap-12 md:gap-16 text-sm font-medium">
                   <Link href="/school/students" className="text-gray-800 hover:text-gray-900 hover:underline">학생 정보입력</Link>
-                  {menuContents.length > 0 && <span className="text-gray-300">|</span>}
+
                   {!loadingContents && menuContents.map((c, idx) => {
                     const name = c.name.replace(/\s/g, '')
                     if (!name || name === '-' || name === ' - ') return null
@@ -195,9 +195,9 @@ export default function SchoolLayout({ children }: { children: React.ReactNode }
                         {c.name}
                       </button>
                     )
-                  }).filter(Boolean).flatMap((node, i, arr) => i < arr.length - 1 ? [node, <span key={`c-sep-${i}`} className="text-gray-300">|</span>] : [node])}
+                  }).filter(Boolean)}
 
-                  {menuDevices.length > 0 && <span className="text-gray-300">|</span>}
+
                   {!loadingDevices && menuDevices.map((d, idx) => {
                     const name = d.device_name.replace(/\s/g, '')
                     if (!name || name === '-' || name === ' - ') return null
@@ -250,9 +250,9 @@ export default function SchoolLayout({ children }: { children: React.ReactNode }
                         {d.device_name}
                       </button>
                     )
-                  }).filter(Boolean).flatMap((node, i, arr) => i < arr.length - 1 ? [node, <span key={`sep-${i}`} className="text-gray-300">|</span>] : [node])}
+                  }).filter(Boolean)}
 
-                  <span className="text-gray-300">|</span>
+
                   <Link
                     href="/school/settings"
                     className="text-gray-800 hover:text-gray-900 hover:underline"

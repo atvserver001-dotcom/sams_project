@@ -403,7 +403,7 @@ export default function HeartRatePage() {
 
           {/* 우측: 심박계 측정 시작 버튼 */}
           <div className="flex items-center gap-4">
-            {statusText && <span className="text-sm font-bold text-indigo-600">{statusText}</span>}
+
             <button
               onClick={handleStartMeasurement}
               className={`

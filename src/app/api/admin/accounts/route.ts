@@ -41,6 +41,7 @@ export async function POST(req: NextRequest) {
   }
 
   const { data, error } = await (supabaseAdmin
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .from('operator_accounts') as any)
     .insert({ username, password, role, school_id: school_id ?? null, is_active: is_active ?? true } as Database['public']['Tables']['operator_accounts']['Insert'])
     .select('id, username, password, role, school_id, is_active')

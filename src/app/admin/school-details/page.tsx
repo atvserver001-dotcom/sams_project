@@ -30,8 +30,9 @@ export default function SchoolDetailsPage() {
       if (!res.ok) throw new Error(data.error || '목록 조회 실패')
       setItems(data.items || [])
       setTotal(data.total || 0)
-    } catch (e: any) {
-      setError(e.message || '목록 조회 실패')
+    } catch (e: unknown) {
+      const err = e as Error
+      setError(err.message || '목록 조회 실패')
     } finally {
       setLoading(false)
     }
@@ -93,8 +94,9 @@ export default function SchoolDetailsPage() {
                             const data = await res.json()
                             if (!res.ok) throw new Error(data.error || '전환 실패')
                             window.location.href = '/school'
-                          } catch (e: any) {
-                            alert(e.message || '전환 실패')
+                          } catch (e: unknown) {
+                            const err = e as Error
+                            alert(err.message || '전환 실패')
                           }
                         }}
                         className="px-3 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded"

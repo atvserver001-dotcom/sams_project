@@ -46,6 +46,7 @@ async function getOperatorFromRequest(request: NextRequest): Promise<AuthResult>
   }
 
   try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const decoded = jwt.verify(accessToken, jwtSecret) as any
     const { data: account, error } = await supabaseAdmin
       .from('operator_accounts')
@@ -162,6 +163,7 @@ export async function GET(request: NextRequest) {
 
   const query = category_type === 'all'
     ? baseQuery.in('exercise_type', ['strength', 'endurance', 'flexibility'])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     : Number.isFinite(category_type as any)
       ? baseQuery.eq('exercise_type', typeMap[category_type as 1 | 2 | 3 | 4])
       : baseQuery
@@ -181,7 +183,9 @@ export async function GET(request: NextRequest) {
   for (const s of students ?? []) {
     studentIdToRow[s.id] = {
       student_id: s.id,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       student_no: (s as any).student_no ?? 0,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       name: (s as any).name ?? '',
       minutes: Array.from({ length: 12 }, () => null),
       avg_bpm: Array.from({ length: 12 }, () => null),

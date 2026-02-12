@@ -128,8 +128,11 @@ export default function SchoolLayout({ children }: { children: React.ReactNode }
                   {menuContents.length > 0 && <span className="text-gray-300">|</span>}
                   {!loadingContents && menuContents.map((c, idx) => {
                     const name = c.name.replace(/\s/g, '')
-                    const isExercises = name.includes('운동기록관리')
+                    if (!name || name === '-' || name === ' - ') return null
+
+                    const isExercises = name.includes('운동기록관리') || name.includes('헬스케어')
                     const isPaps = name.includes('PAPS기록관리')
+                    const isHeartRate = name.includes('심박기록관리') || name.includes('하트케어') || name.includes('심박계')
                     const expired = isExpiredContent(c)
 
                     if (expired) {
@@ -149,6 +152,18 @@ export default function SchoolLayout({ children }: { children: React.ReactNode }
                         <Link
                           key={`${c.school_content_id}-${idx}`}
                           href="/school/exercises"
+                          className="text-gray-800 hover:text-gray-900 hover:underline"
+                          title={c.name}
+                        >
+                          {c.name}
+                        </Link>
+                      )
+                    }
+                    if (isHeartRate) {
+                      return (
+                        <Link
+                          key={`${c.school_content_id}-${idx}`}
+                          href="/school/heart-rate"
                           className="text-gray-800 hover:text-gray-900 hover:underline"
                           title={c.name}
                         >
@@ -180,13 +195,16 @@ export default function SchoolLayout({ children }: { children: React.ReactNode }
                         {c.name}
                       </button>
                     )
-                  }).flatMap((node, i, arr) => i < arr.length - 1 ? [node, <span key={`c-sep-${i}`} className="text-gray-300">|</span>] : [node])}
+                  }).filter(Boolean).flatMap((node, i, arr) => i < arr.length - 1 ? [node, <span key={`c-sep-${i}`} className="text-gray-300">|</span>] : [node])}
 
                   {menuDevices.length > 0 && <span className="text-gray-300">|</span>}
                   {!loadingDevices && menuDevices.map((d, idx) => {
                     const name = d.device_name.replace(/\s/g, '')
-                    const isExercises = name.includes('운동기록관리')
+                    if (!name || name === '-' || name === ' - ') return null
+
+                    const isExercises = name.includes('운동기록관리') || name.includes('헬스케어')
                     const isPaps = name.includes('PAPS기록관리')
+                    const isHeartRate = name.includes('심박기록관리') || name.includes('하트케어') || name.includes('심박계')
                     const expired = isExpired(d)
 
                     if (expired) {
@@ -203,6 +221,13 @@ export default function SchoolLayout({ children }: { children: React.ReactNode }
                     if (isExercises) {
                       return (
                         <Link key={`${d.device_id}-${idx}`} href="/school/exercises" className="text-gray-800 hover:text-gray-900 hover:underline">
+                          {d.device_name}
+                        </Link>
+                      )
+                    }
+                    if (isHeartRate) {
+                      return (
+                        <Link key={`${d.device_id}-${idx}`} href="/school/heart-rate" className="text-gray-800 hover:text-gray-900 hover:underline">
                           {d.device_name}
                         </Link>
                       )
@@ -225,7 +250,7 @@ export default function SchoolLayout({ children }: { children: React.ReactNode }
                         {d.device_name}
                       </button>
                     )
-                  }).flatMap((node, i, arr) => i < arr.length - 1 ? [node, <span key={`sep-${i}`} className="text-gray-300">|</span>] : [node])}
+                  }).filter(Boolean).flatMap((node, i, arr) => i < arr.length - 1 ? [node, <span key={`sep-${i}`} className="text-gray-300">|</span>] : [node])}
 
                   <span className="text-gray-300">|</span>
                   <Link

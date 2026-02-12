@@ -24,6 +24,7 @@ type AssetItem = {
   full_url: string | null
   created_at?: string | null
   updated_at?: string | null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   metadata?: any
 }
 
@@ -83,13 +84,10 @@ export default function SchoolSettingsPage() {
   const [devices, setDevices] = useState<SchoolDeviceInstance[]>([])
   const [loadingDevices, setLoadingDevices] = useState(true)
 
-  const [assetsByDeviceId, setAssetsByDeviceId] = useState<Record<string, AssetItem[]>>({})
-  const [loadingAssetsId, setLoadingAssetsId] = useState<string | null>(null)
-  const [uploadingId, setUploadingId] = useState<string | null>(null)
-  const [uploadingPageId, setUploadingPageId] = useState<string | null>(null)
+
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
-  const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
+
 
   const [settingsModalOpen, setSettingsModalOpen] = useState(false)
   const [settingsTarget, setSettingsTarget] = useState<{ id: string; label: string } | null>(null)
@@ -168,6 +166,12 @@ export default function SchoolSettingsPage() {
   const [memoText, setMemoText] = useState('')
   const [memoSaving, setMemoSaving] = useState(false)
 
+  // 하트 케어 ID 매핑 모달
+  const [heartRateMappingModalOpen, setHeartRateMappingModalOpen] = useState(false)
+  const [heartRateMappings, setHeartRateMappings] = useState<Array<{ student_no: number; device_id: string }>>([])
+  const [heartRateMappingSaving, setHeartRateMappingSaving] = useState(false)
+  const [heartRateMappingLabel, setHeartRateMappingLabel] = useState('')
+
   const loadDevices = async () => {
     setLoadingDevices(true)
     try {
@@ -181,81 +185,11 @@ export default function SchoolSettingsPage() {
     }
   }
 
-  const loadAssets = async (schoolDeviceId: string) => {
-    setLoadingAssetsId(schoolDeviceId)
-    try {
-      const res = await fetch(`/api/school/device-assets?school_device_id=${encodeURIComponent(schoolDeviceId)}`, {
-        credentials: 'include',
-      })
-      const data = await res.json()
-      setAssetsByDeviceId((prev) => ({ ...prev, [schoolDeviceId]: Array.isArray(data.items) ? data.items : [] }))
-    } catch {
-      setAssetsByDeviceId((prev) => ({ ...prev, [schoolDeviceId]: [] }))
-    } finally {
-      setLoadingAssetsId(null)
-    }
-  }
 
-  const uploadFiles = async (schoolDeviceId: string, files: File[]) => {
-    if (!files || files.length === 0) return
-    try {
-      setUploadingId(schoolDeviceId)
-      const form = new FormData()
-      form.append('school_device_id', schoolDeviceId)
-      files.forEach((f) => form.append('files', f))
-      const res = await fetch('/api/school/device-assets', {
-        method: 'POST',
-        credentials: 'include',
-        body: form,
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.error || '업로드 실패')
-      await loadAssets(schoolDeviceId)
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err)
-      alert(message || '업로드 실패')
-    } finally {
-      setUploadingId(null)
-    }
-  }
 
-  const replaceSingleImage = async (schoolDeviceId: string, existingAssets: AssetItem[], file: File) => {
-    if (!file) return
-    try {
-      setUploadingId(schoolDeviceId)
 
-      // 기존 이미지 모두 삭제 (이미지 페이지는 항상 1장만 유지)
-      for (const a of existingAssets) {
-        const res = await fetch(
-          `/api/school/device-assets?school_device_id=${encodeURIComponent(schoolDeviceId)}&original_path=${encodeURIComponent(
-            a.original_path,
-          )}`,
-          { method: 'DELETE', credentials: 'include' },
-        )
-        const data = await res.json().catch(() => ({}))
-        if (!res.ok) throw new Error(data.error || '삭제 실패')
-      }
 
-      // 새 이미지 1장 업로드
-      const form = new FormData()
-      form.append('school_device_id', schoolDeviceId)
-      form.append('files', file)
-      const res = await fetch('/api/school/device-assets', {
-        method: 'POST',
-        credentials: 'include',
-        body: form,
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.error || '업로드 실패')
 
-      await loadAssets(schoolDeviceId)
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err)
-      alert(message || '변경 실패')
-    } finally {
-      setUploadingId(null)
-    }
-  }
 
   useEffect(() => {
     loadDevices()
@@ -279,6 +213,7 @@ export default function SchoolSettingsPage() {
     return Array.from(map.values())
   }, [rows])
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const resolveHex = (hex: any) => {
     const v = String(hex || '').trim()
     return /^#[0-9a-fA-F]{6}$/.test(v) ? v : null
@@ -292,6 +227,7 @@ export default function SchoolSettingsPage() {
     if (!res.ok) throw new Error(data.error || '페이지 불러오기 실패')
 
     const items = Array.isArray(data.items) ? data.items : []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const pages: SettingsPage[] = items.map((p: any) => ({
       id: String(p.id),
       kind: p.kind === 'images' ? 'images' : 'custom',
@@ -301,6 +237,7 @@ export default function SchoolSettingsPage() {
       image_thumb_path: p.image_thumb_path ?? null,
       image_full_url: p.image_full_url ?? null,
       image_thumb_url: p.image_thumb_url ?? null,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       blocks: (Array.isArray(p.blocks) ? p.blocks : []).map((b: any) => {
         if (String(b.type) === 'image') {
           const bb: CustomImageBlock = {
@@ -330,6 +267,7 @@ export default function SchoolSettingsPage() {
     setOriginalPagesByDeviceId((prev) => ({ ...prev, [schoolDeviceId]: pages }))
     const draftPages: DraftSettingsPage[] = pages.map((p) => ({
       ...p,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       blocks: (p.blocks || []).map((b) => ({ ...(b as any) })) as DraftBlock[],
     }))
     setPagesByDeviceId((prev) => ({ ...prev, [schoolDeviceId]: draftPages }))
@@ -370,6 +308,7 @@ export default function SchoolSettingsPage() {
       for (const p of cur) {
         if (p._pendingPreviewUrl) revokePreview(p._pendingPreviewUrl)
         for (const b of p.blocks || []) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const bb: any = b
           if (bb?._pendingPreviewUrl) revokePreview(bb._pendingPreviewUrl)
         }
@@ -472,6 +411,7 @@ export default function SchoolSettingsPage() {
       const target = cur.find((p) => p.id === pageId)
       if (target?._pendingPreviewUrl) revokePreview(target._pendingPreviewUrl)
       for (const b of target?.blocks || []) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         if ((b as any)._pendingPreviewUrl) revokePreview((b as any)._pendingPreviewUrl)
       }
 
@@ -508,6 +448,7 @@ export default function SchoolSettingsPage() {
         ...prev,
         [schoolDeviceId]: pages.map((p) => {
           if (p.id !== pageId) return p
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const target = (p.blocks || []).find((b) => b.id === blockId) as any
           if (target?._pendingPreviewUrl) revokePreview(target._pendingPreviewUrl)
           setSettingsDirty(true)
@@ -577,6 +518,7 @@ export default function SchoolSettingsPage() {
             blocks: (p.blocks || []).map((b) => {
               if (b.id !== blockId) return b
               if (b.type !== 'image') return b
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               const bb = b as any
               if (bb._pendingPreviewUrl) revokePreview(bb._pendingPreviewUrl)
               const nextPreview = file ? URL.createObjectURL(file) : null
@@ -601,6 +543,7 @@ export default function SchoolSettingsPage() {
             blocks: (p.blocks || []).map((b) => {
               if (b.id !== blockId) return b
               if (b.type !== 'image') return b
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               const bb = b as any
               if (bb._pendingPreviewUrl) revokePreview(bb._pendingPreviewUrl)
               setSettingsDirty(true)
@@ -728,8 +671,10 @@ export default function SchoolSettingsPage() {
           blockIdMap.set(b.id, realId)
 
           // 이미지 블록이면 업로드(드래프트)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           if (b.type === 'image' && (b as any)._pendingFile) {
             const form = new FormData()
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             form.append('file', (b as any)._pendingFile)
             await fetchJson(`/api/school/device-page-blocks/${encodeURIComponent(realId)}/image`, { method: 'POST', body: form })
           }
@@ -754,6 +699,7 @@ export default function SchoolSettingsPage() {
           }
 
           if (b.type === 'image') {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const bb = b as any
             if (bb._pendingClear) {
               await fetchJson(`/api/school/device-page-blocks/${encodeURIComponent(bid)}/image`, { method: 'DELETE' })
@@ -800,10 +746,63 @@ export default function SchoolSettingsPage() {
       setDevices((prev) => prev.map((d) => (d.id === memoTarget.id ? { ...d, memo: memoText } : d)))
       setMemoModalOpen(false)
       setMemoTarget(null)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       alert(e.message || '메모 저장 실패')
     } finally {
       setMemoSaving(false)
+    }
+  }
+
+  // 하트 케어 ID 매핑 모달 열기
+  const openHeartRateMappingModal = async (label: string) => {
+    setHeartRateMappingLabel(label)
+    try {
+      const res = await fetch('/api/school/heart-rate-mappings', { credentials: 'include' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || '매핑 데이터 조회 실패')
+
+      // 1~30번 기본 값 생성 후 기존 데이터 병합
+      const mappingsData = Array.isArray(data.mappings) ? data.mappings : []
+      const initial = Array.from({ length: 30 }, (_, i) => ({
+        student_no: i + 1,
+        device_id: '',
+      }))
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      mappingsData.forEach((m: any) => {
+        const idx = Number(m.student_no) - 1
+        if (idx >= 0 && idx < 30) {
+          initial[idx].device_id = String(m.device_id || '')
+        }
+      })
+      setHeartRateMappings(initial)
+      setHeartRateMappingModalOpen(true)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (e: any) {
+      alert(e.message || '매핑 데이터 조회 실패')
+    }
+  }
+
+  // 하트 케어 ID 매핑 저장
+  const saveHeartRateMappings = async () => {
+    setHeartRateMappingSaving(true)
+    try {
+      const res = await fetch('/api/school/heart-rate-mappings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ mappings: heartRateMappings }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || '저장 실패')
+
+      alert('하트 케어 ID 매핑이 저장되었습니다.')
+      setHeartRateMappingModalOpen(false)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (e: any) {
+      alert(e.message || '저장 실패')
+    } finally {
+      setHeartRateMappingSaving(false)
     }
   }
 
@@ -910,8 +909,14 @@ export default function SchoolSettingsPage() {
                               <button
                                 type="button"
                                 onClick={async () => {
-                                  ensurePages(d.id)
-                                  await openSettingsModal(d.id, `${d.device_name} #${ord}`)
+                                  // "심박기록관리" 또는 "하트 케어" 콘텐츠인 경우 하트 케어 ID 매핑 모달 표시
+                                  if (d.content_name === '심박기록관리' || d.content_name === '하트 케어' || d.content_name === '하트케어') {
+                                    await openHeartRateMappingModal(`${d.device_name} #${ord}`)
+                                  } else {
+                                    // 그 외의 경우 기존 설정 모달 표시
+                                    ensurePages(d.id)
+                                    await openSettingsModal(d.id, `${d.device_name} #${ord}`)
+                                  }
                                 }}
                                 className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium shadow-sm"
                               >
@@ -958,6 +963,7 @@ export default function SchoolSettingsPage() {
             <div className="px-6 py-4 border-b border-gray-200">
               {(() => {
                 const pages = pagesByDeviceId[settingsTarget.id] || []
+                // eslint-disable-next-line @typescript-eslint/no-unused-vars
                 const pageFull = pages.length >= 8
                 return (
                   <>
@@ -1043,7 +1049,7 @@ export default function SchoolSettingsPage() {
               {(() => {
                 const deviceId = settingsTarget.id
                 const pages = pagesByDeviceId[deviceId] || []
-                const pageFull = pages.length >= 8
+
                 const active = pages.find((p) => p.id === activePageId) || pages[0] || null
                 const activeBlocks = active?.kind === 'custom' ? active.blocks : []
                 const blockFull = active?.kind === 'custom' ? activeBlocks.length >= 4 : true
@@ -1210,6 +1216,7 @@ export default function SchoolSettingsPage() {
                                   <div className="mt-3 rounded-2xl border border-gray-200 bg-gray-50 p-3">
                                     {(() => {
                                       const expanded = !!expandedImageBlocks[b.id]
+                                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
                                       const bb: any = b
                                       const pendingPreview: string | null = bb._pendingPreviewUrl || null
                                       const pendingFile: File | null = bb._pendingFile || null
@@ -1566,6 +1573,75 @@ export default function SchoolSettingsPage() {
                 className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-60"
               >
                 저장
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 하트 케어 ID 매핑 모달 */}
+      {heartRateMappingModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col text-gray-900">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold">하트 케어 ID 설정 - {heartRateMappingLabel}</h3>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (heartRateMappingSaving) return
+                    setHeartRateMappingModalOpen(false)
+                  }}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  <XMarkIcon className="h-5 w-5" />
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">1~30번 학생의 하트 케어 디바이스 ID를 입력하세요.</p>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 py-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                {heartRateMappings.map((mapping) => (
+                  <div key={mapping.student_no} className="flex flex-col gap-1">
+                    <label className="text-xs font-semibold text-gray-700">
+                      {mapping.student_no}번
+                    </label>
+                    <input
+                      type="text"
+                      value={mapping.device_id}
+                      onChange={(e) => {
+                        const newMappings = [...heartRateMappings]
+                        const idx = mapping.student_no - 1
+                        newMappings[idx].device_id = e.target.value
+                        setHeartRateMappings(newMappings)
+                      }}
+                      className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      placeholder="디바이스 ID"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (heartRateMappingSaving) return
+                  setHeartRateMappingModalOpen(false)
+                }}
+                className="px-4 py-2 rounded-xl bg-gray-200 hover:bg-gray-300 text-gray-800"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                disabled={heartRateMappingSaving}
+                onClick={saveHeartRateMappings}
+                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-60"
+              >
+                {heartRateMappingSaving ? '저장 중...' : '저장'}
               </button>
             </div>
           </div>

@@ -22,6 +22,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (is_active !== undefined) updatePayload.is_active = is_active
 
   const { data, error } = await (supabaseAdmin
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .from('operator_accounts') as any)
     .update(updatePayload as Database['public']['Tables']['operator_accounts']['Update'])
     .eq('id', id)

@@ -9,6 +9,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Content-Type: application/json 필요' }, { status: 415 })
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let body: any
   try {
     body = await request.json()

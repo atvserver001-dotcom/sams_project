@@ -16,8 +16,10 @@ async function getOperatorFromRequest(request: NextRequest) {
   }
 
   try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const decoded = jwt.verify(accessToken, jwtSecret) as any
     const { data: account, error } = await (supabaseAdmin
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .from('operator_accounts') as any)
       .select('id, role, school_id, is_active')
       .eq('id', decoded.sub)
@@ -75,8 +77,11 @@ export async function GET(request: NextRequest) {
     school: {
       id: data.id,
       name: data.name,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       group_no: (data as any).group_no,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       school_type: (data as any).school_type,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       recognition_key: (data as any).recognition_key,
     },
   })

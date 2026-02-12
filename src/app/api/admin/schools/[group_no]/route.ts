@@ -45,6 +45,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ grou
     .eq('school_id', schoolId)
 
   if (scErr) return NextResponse.json({ error: scErr.message }, { status: 500 })
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const schoolContents = (schoolContentsRaw ?? []) as any[]
 
   const contents = (schoolContents || []).map((sc: any) => ({
@@ -202,6 +203,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ grou
       if (exDevErr) return NextResponse.json({ error: '기존 디바이스 조회 실패: ' + exDevErr.message }, { status: 500 })
 
       const existingDevices = (existingDevicesRaw ?? []) as any[]
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const byDeviceId = new Map<string, any[]>()
       for (const d of existingDevices) {
         const arr = byDeviceId.get(d.device_id) || []

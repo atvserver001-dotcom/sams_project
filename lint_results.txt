@@ -1,0 +1,126 @@
+
+> mirror-project@0.1.0 lint
+> eslint
+
+
+C:\Users\Lim\Desktop\mirror-project\scripts\supabase-prepare-prod-schema-from-test.js
+   19:1   warning  Unused eslint-disable directive (no problems were reported from 'no-console')
+   20:12  error    A `require()` style import is forbidden                                        @typescript-eslint/no-require-imports
+   21:14  error    A `require()` style import is forbidden                                        @typescript-eslint/no-require-imports
+   22:17  error    A `require()` style import is forbidden                                        @typescript-eslint/no-require-imports
+   23:13  error    A `require()` style import is forbidden                                        @typescript-eslint/no-require-imports
+   25:1   error    A `require()` style import is forbidden                                        @typescript-eslint/no-require-imports
+   27:20  error    A `require()` style import is forbidden                                        @typescript-eslint/no-require-imports
+  365:11  warning  'testKeyByName' is assigned a value but never used                             @typescript-eslint/no-unused-vars
+
+C:\Users\Lim\Desktop\mirror-project\scripts\supabase-sync-functions-triggers.js
+  23:1   warning  Unused eslint-disable directive (no problems were reported from 'no-console')
+  24:12  error    A `require()` style import is forbidden                                        @typescript-eslint/no-require-imports
+  25:13  error    A `require()` style import is forbidden                                        @typescript-eslint/no-require-imports
+  26:14  error    A `require()` style import is forbidden                                        @typescript-eslint/no-require-imports
+  27:17  error    A `require()` style import is forbidden                                        @typescript-eslint/no-require-imports
+  29:1   error    A `require()` style import is forbidden                                        @typescript-eslint/no-require-imports
+  31:20  error    A `require()` style import is forbidden                                        @typescript-eslint/no-require-imports
+
+C:\Users\Lim\Desktop\mirror-project\src\app\api\admin\heart-rate-test\stream\route.ts
+    21:3    warning  Unused eslint-disable directive (no problems were reported from 'no-var')
+   242:10   warning  'safeHexToU32' is defined but never used                                   @typescript-eslint/no-unused-vars
+   249:10   warning  'macHexToDecimalString' is defined but never used                          @typescript-eslint/no-unused-vars
+   289:10   warning  'reverseHexBytes' is defined but never used                                @typescript-eslint/no-unused-vars
+   522:7    warning  'firstFlag' is never reassigned. Use 'const' instead                       prefer-const
+   526:7    warning  'lastFlag' is never reassigned. Use 'const' instead                        prefer-const
+   750:3    warning  Unused eslint-disable directive (no problems were reported from 'no-var')
+  1369:39   warning  Unexpected any. Specify a different type                                   @typescript-eslint/no-explicit-any
+  1372:51   warning  Unexpected any. Specify a different type                                   @typescript-eslint/no-explicit-any
+  1408:35   warning  Unexpected any. Specify a different type                                   @typescript-eslint/no-explicit-any
+  1409:109  warning  Unexpected any. Specify a different type                                   @typescript-eslint/no-explicit-any
+  1409:149  warning  Unexpected any. Specify a different type                                   @typescript-eslint/no-explicit-any
+
+C:\Users\Lim\Desktop\mirror-project\src\app\api\admin\school-details\route.ts
+  30:7  warning  'teacherCountBySchoolId' is never reassigned. Use 'const' instead                                      prefer-const
+  32:5  warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+  49:7  warning  'deviceCountBySchoolId' is never reassigned. Use 'const' instead                                       prefer-const
+  51:5  warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+  61:7  warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+
+C:\Users\Lim\Desktop\mirror-project\src\app\api\admin\schools\[group_no]\route.ts
+   19:3   warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+   28:3   warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+   31:3   warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+   57:3   warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+   67:5   warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+   81:7   warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+  111:68  warning  Unexpected any. Specify a different type                                                               @typescript-eslint/no-explicit-any
+  118:3   warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+  123:3   warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+  135:3   warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+  145:5   warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+  153:5   warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+  163:7   warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+  176:9   warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+  187:9   warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+  200:9   warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+  212:9   warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+  220:9   warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+  224:11  warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+  234:7   warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+  243:7   warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+  246:42  warning  Unexpected any. Specify a different type                                                               @typescript-eslint/no-explicit-any
+  259:13  warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+  281:11  warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+  290:13  warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+  309:3   warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+
+C:\Users\Lim\Desktop\mirror-project\src\app\api\device\class-students\route.ts
+  38:3   warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+  40:14  warning  Unexpected any. Specify a different type                                                               @typescript-eslint/no-explicit-any
+  41:14  warning  Unexpected any. Specify a different type                                                               @typescript-eslint/no-explicit-any
+  42:14  warning  Unexpected any. Specify a different type                                                               @typescript-eslint/no-explicit-any
+  43:3   warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+  45:14  warning  Unexpected any. Specify a different type                                                               @typescript-eslint/no-explicit-any
+  46:14  warning  Unexpected any. Specify a different type                                                               @typescript-eslint/no-explicit-any
+  47:3   warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+  49:14  warning  Unexpected any. Specify a different type                                                               @typescript-eslint/no-explicit-any
+  50:14  warning  Unexpected any. Specify a different type                                                               @typescript-eslint/no-explicit-any
+  51:3   warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+  53:14  warning  Unexpected any. Specify a different type                                                               @typescript-eslint/no-explicit-any
+  54:14  warning  Unexpected any. Specify a different type                                                               @typescript-eslint/no-explicit-any
+  55:14  warning  Unexpected any. Specify a different type                                                               @typescript-eslint/no-explicit-any
+
+C:\Users\Lim\Desktop\mirror-project\src\app\api\device\settings\route.ts
+  89:33  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Users\Lim\Desktop\mirror-project\src\app\api\school\device-assets\route.ts
+  191:47  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  191:60  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  206:16  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Users\Lim\Desktop\mirror-project\src\app\api\school\device-pages\[id]\route.ts
+  91:16  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Users\Lim\Desktop\mirror-project\src\app\api\school\devices\route.ts
+  65:7  warning  'idToDevice' is never reassigned. Use 'const' instead  prefer-const
+
+C:\Users\Lim\Desktop\mirror-project\src\app\school\heart-rate\page.tsx
+   59:10  warning  'statusText' is assigned a value but never used                                                        @typescript-eslint/no-unused-vars
+  157:9   warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+
+C:\Users\Lim\Desktop\mirror-project\src\app\school\settings\page.tsx
+    87:10  warning  'assetsByDeviceId' is assigned a value but never used    @typescript-eslint/no-unused-vars
+    88:10  warning  'loadingAssetsId' is assigned a value but never used     @typescript-eslint/no-unused-vars
+    89:10  warning  'uploadingId' is assigned a value but never used         @typescript-eslint/no-unused-vars
+    90:10  warning  'uploadingPageId' is assigned a value but never used     @typescript-eslint/no-unused-vars
+    90:27  warning  'setUploadingPageId' is assigned a value but never used  @typescript-eslint/no-unused-vars
+    93:9   warning  'fileInputRefs' is assigned a value but never used       @typescript-eslint/no-unused-vars
+   206:9   warning  'uploadFiles' is assigned a value but never used         @typescript-eslint/no-unused-vars
+   229:9   warning  'replaceSingleImage' is assigned a value but never used  @typescript-eslint/no-unused-vars
+   822:17  warning  Unexpected any. Specify a different type                 @typescript-eslint/no-explicit-any
+   843:32  warning  Unexpected any. Specify a different type                 @typescript-eslint/no-explicit-any
+   851:17  warning  Unexpected any. Specify a different type                 @typescript-eslint/no-explicit-any
+   871:17  warning  Unexpected any. Specify a different type                 @typescript-eslint/no-explicit-any
+  1120:23  warning  'pageFull' is assigned a value but never used            @typescript-eslint/no-unused-vars
+  1287:49  warning  Unexpected any. Specify a different type                 @typescript-eslint/no-explicit-any
+
+✖ 94 problems (12 errors, 82 warnings)
+  0 errors and 41 warnings potentially fixable with the `--fix` option.
+

@@ -75,7 +75,9 @@ async function getOperatorWithSchool(request: NextRequest) {
   if (!jwtSecret) return { error: '서버 설정 오류 (JWT_SECRET 누락)', status: 500 as const }
 
   try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const decoded = jwt.verify(accessToken, jwtSecret) as any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: account, error } = await (supabaseAdmin.from('operator_accounts') as any)
       .select('id, role, school_id, is_active')
       .eq('id', decoded.sub)
@@ -84,13 +86,17 @@ async function getOperatorWithSchool(request: NextRequest) {
     if (error || !account) return { error: '사용자를 찾을 수 없습니다.', status: 404 as const }
     if (!account.is_active) return { error: '비활성화된 계정입니다.', status: 403 as const }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if ((account as any).role === 'admin') {
       const actingSchoolId = request.cookies.get('acting_school_id')?.value || null
       if (!actingSchoolId) return { error: '관리자 acting 컨텍스트가 설정되지 않았습니다.', status: 403 as const }
       return { schoolId: actingSchoolId as string }
     }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if ((account as any).role === 'school') {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if (!(account as any).school_id) return { error: '학교 정보가 누락되었습니다.', status: 400 as const }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return { schoolId: (account as any).school_id as string }
     }
     return { error: '권한이 없습니다.', status: 403 as const }
@@ -100,6 +106,7 @@ async function getOperatorWithSchool(request: NextRequest) {
 }
 
 async function resolveBlockWithSchool(blockId: string, schoolId: string) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabaseAdmin as any)
     .from('school_device_page_blocks')
     .select(
@@ -155,6 +162,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   const resolved = await resolveBlockWithSchool(blockId, schoolId)
   if (!resolved.ok) return NextResponse.json({ error: resolved.error }, { status: resolved.status })
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const row = resolved.row as any
   if (String(row.type) !== 'image') return NextResponse.json({ error: '이미지 블록이 아닙니다.' }, { status: 400 })
 
@@ -173,7 +181,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   // 기존 이미지 제거
   try {
     await removeStoredPair({ original: row.image_original_path, thumb: row.image_thumb_path })
-  } catch {}
+  } catch { }
 
   const authKey = String(row.page?.school_device?.auth_key || '')
   if (!authKey) return NextResponse.json({ error: '디바이스 인증키가 없습니다.' }, { status: 400 })
@@ -197,10 +205,11 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   if (thumbErr) {
     try {
       await supabaseAdmin.storage.from(BUCKET).remove([key])
-    } catch {}
+    } catch { }
     return NextResponse.json({ error: `썸네일 생성/업로드 실패: ${thumbErr.message}` }, { status: 500 })
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: updated, error: dbErr } = await (supabaseAdmin as any)
     .from('school_device_page_blocks')
     .update({ image_name: safeName, image_original_path: key, image_thumb_path: thumbKey })
@@ -241,14 +250,16 @@ export async function DELETE(request: NextRequest, ctx: { params: Promise<{ id: 
   const resolved = await resolveBlockWithSchool(blockId, schoolId)
   if (!resolved.ok) return NextResponse.json({ error: resolved.error }, { status: resolved.status })
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const row = resolved.row as any
   if (String(row.type) !== 'image') return NextResponse.json({ error: '이미지 블록이 아닙니다.' }, { status: 400 })
 
   await ensureBucketExists()
   try {
     await removeStoredPair({ original: row.image_original_path, thumb: row.image_thumb_path })
-  } catch {}
+  } catch { }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error: dbErr } = await (supabaseAdmin as any)
     .from('school_device_page_blocks')
     .update({ image_name: null, image_original_path: null, image_thumb_path: null })

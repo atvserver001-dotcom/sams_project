@@ -9,7 +9,7 @@ interface ContentRow { id: string; name: string; description?: string; color_hex
 export default function AdminDevicesPage() {
   const { isAdmin } = useAuth()
   const [activeTab, setActiveTab] = useState<'content' | 'device'>('content')
-  
+
   const [devices, setDevices] = useState<DeviceRow[]>([])
   const [contents, setContents] = useState<ContentRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -18,16 +18,16 @@ export default function AdminDevicesPage() {
   const [isDeviceModalOpen, setIsDeviceModalOpen] = useState(false)
   const [isContentModalOpen, setIsContentModalOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
-  
+
   const [deviceName, setDeviceName] = useState('')
   const [deviceIconFile, setDeviceIconFile] = useState<File | null>(null)
   const [deviceIconPreview, setDeviceIconPreview] = useState<string>('')
-  
+
   const [contentName, setContentName] = useState('')
   const [contentDesc, setContentDesc] = useState('')
   const [selectedDeviceIds, setSelectedDeviceIds] = useState<string[]>([])
   const [contentColorHex, setContentColorHex] = useState<string>('#DBEAFE')
-  
+
   const [formError, setFormError] = useState('')
 
   const fetchAll = async () => {
@@ -40,14 +40,15 @@ export default function AdminDevicesPage() {
       ])
       const devData = await devRes.json()
       const contData = await contRes.json()
-      
+
       if (!devRes.ok) throw new Error(devData.error || '디바이스 조회 실패')
       if (!contRes.ok) throw new Error(contData.error || '컨텐츠 조회 실패')
-      
+
       setDevices(devData.items || [])
       setContents(contData.items || [])
-    } catch (e: any) {
-      setError(e.message || '목록 조회 실패')
+    } catch (e: unknown) {
+      const err = e as Error
+      setError(err.message || '목록 조회 실패')
     } finally {
       setLoading(false)
     }
@@ -85,8 +86,9 @@ export default function AdminDevicesPage() {
         throw new Error(data.error || '삭제 실패')
       }
       await fetchAll()
-    } catch (e: any) {
-      alert(e.message || '삭제 실패')
+    } catch (e: unknown) {
+      const err = e as Error
+      alert(err.message || '삭제 실패')
     }
   }
 
@@ -96,7 +98,7 @@ export default function AdminDevicesPage() {
     try {
       const name = deviceName.trim()
       if (!name) return setFormError('디바이스 이름을 입력해주세요.')
-      
+
       const res = await fetch(editingId ? `/api/admin/devices/${editingId}` : '/api/admin/devices', {
         method: editingId ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -124,8 +126,9 @@ export default function AdminDevicesPage() {
       }
       setIsDeviceModalOpen(false)
       await fetchAll()
-    } catch (e: any) {
-      setFormError(e.message || '저장 실패')
+    } catch (e: unknown) {
+      const err = e as Error
+      setFormError(err.message || '저장 실패')
     }
   }
 
@@ -159,8 +162,9 @@ export default function AdminDevicesPage() {
         throw new Error(data.error || '삭제 실패')
       }
       await fetchAll()
-    } catch (e: any) {
-      alert(e.message || '삭제 실패')
+    } catch (e: unknown) {
+      const err = e as Error
+      alert(err.message || '삭제 실패')
     }
   }
 
@@ -170,7 +174,7 @@ export default function AdminDevicesPage() {
     try {
       const name = contentName.trim()
       if (!name) return setFormError('컨텐츠 이름을 입력해주세요.')
-      
+
       const res = await fetch(editingId ? `/api/admin/contents/${editingId}` : '/api/admin/contents', {
         method: editingId ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -183,8 +187,9 @@ export default function AdminDevicesPage() {
       }
       setIsContentModalOpen(false)
       await fetchAll()
-    } catch (e: any) {
-      setFormError(e.message || '저장 실패')
+    } catch (e: unknown) {
+      const err = e as Error
+      setFormError(err.message || '저장 실패')
     }
   }
 
@@ -289,7 +294,7 @@ export default function AdminDevicesPage() {
                           style={{ backgroundColor: row.color_hex || '#DBEAFE' }}
                           title={row.color_hex || '#DBEAFE'}
                         />
-                        
+
                       </div>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-500">{row.description || '-'}</td>

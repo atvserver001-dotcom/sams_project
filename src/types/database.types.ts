@@ -1,227 +1,3 @@
-// AllThatVision 학교 운동 관리 시스템
-// Supabase Database Types
-
-export type UserRole = 'admin' | 'teacher' | 'student';
-export type OperatorRole = 'admin' | 'school';
-export type Gender = 'M' | 'F';
-
-export type SchoolType = 1 | 2 | 3; // 1:초등학교, 2:중학교, 3:고등학교
-
-export type ExerciseType = 
-  | 'endurance'    // 지구력
-  | 'flexibility'  // 유연성
-  | 'strength';    // 근력
-
-// ====================================
-// 데이터베이스 테이블 타입
-// ====================================
-
-export interface School extends Record<string, unknown> {
-  id: string;
-  group_no: string; // 4자리 숫자 문자열 (도메인 PK), 실제 DB PK는 id(uuid)
-  name: string;
-  school_type: SchoolType;
-  device_ids?: string[]; // 레거시 환경 호환용 (존재하지 않을 수 있음)
-  recognition_key: string;
-  created_at: string;
-}
-
-export interface Device extends Record<string, unknown> {
-  id: string;
-  device_name: string;
-  sort_order?: number;
-  page?: boolean; // 운영툴 메뉴 표시 여부
-  icon_path?: string | null; // Supabase Storage 경로 (예: device-icons/devices/{id}/...)
-}
-
-export interface DeviceManagement extends Record<string, unknown> {
-  id: string;
-  school_id: string; // schools.id FK
-  device_id: string; // devices.id FK
-  start_date?: string | null; // YYYY-MM-DD
-  end_date?: string | null;
-  limited_period: boolean;
-  created_at: string;
-}
-
-export interface Content extends Record<string, unknown> {
-  id: string
-  name: string
-  description: string | null
-  color_hex: string
-  created_at: string
-}
-
-export interface ContentDevice extends Record<string, unknown> {
-  content_id: string
-  device_id: string
-  created_at?: string
-}
-
-export interface SchoolContent extends Record<string, unknown> {
-  id: string
-  school_id: string
-  content_id: string
-  start_date: string | null
-  end_date: string | null
-  is_unlimited: boolean
-  created_at: string
-}
-
-export interface SchoolDevice extends Record<string, unknown> {
-  id: string
-  school_content_id: string
-  device_id: string
-  auth_key: string
-  memo: string | null
-  created_at: string
-}
-
-export interface Student extends Record<string, unknown> {
-  id: string;
-  school_id: string;
-  year: number; // 학년도 (예: 2025)
-  grade: number; // 학년 (1-12)
-  class_no: number; // 학반
-  student_no: number; // 학번 (반 내 번호)
-  name: string; // 이름
-  gender?: Gender | null; // 성별 (M/F)
-  birth_date?: string | null; // YYYY-MM-DD
-  email?: string | null;
-  height_cm?: number | null;
-  weight_kg?: number | null;
-  notes?: string | null; // 특이사항
-  created_at: string;
-  updated_at: string;
-}
-
-export interface Grade extends Record<string, unknown> {
-  id: string;
-  school_id: string;
-  grade_number: number; // 1-12
-  year: number; // 2025, 2026 등
-  created_at: string;
-}
-
-export interface Class extends Record<string, unknown> {
-  id: string;
-  grade_id: string;
-  class_number: number;
-  class_name?: string;
-  created_at: string;
-}
-
-export interface UserProfile extends Record<string, unknown> {
-  id: string;
-  email: string;
-  full_name: string;
-  role: UserRole;
-  birth_date?: string;
-  school_id?: string;
-  class_id?: string;
-  student_number?: number;
-  granted_by?: string;
-  granted_at?: string;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-// 폐기: 레거시 기록 단건 테이블 타입 (현재 프로젝트에선 사용하지 않음)
-export interface ExerciseRecord extends Record<string, unknown> {
-  id: string;
-  student_id: string;
-  exercise_type: ExerciseType; // 'endurance' | 'flexibility' | 'strength'
-  year: number; // 연도
-  month: number; // 1-12
-  avg_duration_seconds: number | null; // 평균 운동시간(초)
-  avg_accuracy: number | null; // 평균 정확도(%)
-  avg_bpm: number | null; // 평균 심박수
-  avg_max_bpm: number | null; // 최대 심박 평균
-  avg_calories: number | null; // 평균 칼로리(kcal)
-  record_count: number; // 월 내 집계 건수
-  created_at: string;
-  updated_at: string;
-}
-
-export interface PermissionLog extends Record<string, unknown> {
-  id: string;
-  grantor_id?: string;
-  grantee_id: string;
-  role_granted: UserRole;
-  action: 'grant' | 'revoke' | 'update';
-  created_at: string;
-}
-
-// 운영 계정 테이블 타입
-export interface OperatorAccount extends Record<string, unknown> {
-  id: string;
-  username: string;
-  password: string; // 요구사항상 평문 저장
-  role: OperatorRole;
-  school_id?: string | null;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-// ====================================
-// 뷰(View) 타입
-// ====================================
-
-export interface StudentDetail extends Record<string, unknown> {
-  id: string;
-  email: string;
-  full_name: string;
-  student_number?: number;
-  class_number?: number;
-  grade_number?: number;
-  year?: number;
-  school_name?: string;
-  school_id?: string;
-  is_active: boolean;
-}
-
-export interface ExerciseStatistics extends Record<string, unknown> {
-  user_id: string;
-  full_name: string;
-  student_number?: number;
-  total_exercises: number;
-  total_duration_minutes: number;
-  overall_avg_heart_rate?: number;
-  peak_heart_rate?: number;
-  first_exercise_date?: string;
-  last_exercise_date?: string;
-}
-
-// ====================================
-// 조인된 데이터 타입
-// ====================================
-
-export interface ExerciseRecordWithUser extends ExerciseRecord {
-  user_profiles?: UserProfile;
-}
-
-export interface ExerciseRecordWithDetails extends ExerciseRecord {
-  user_profiles?: {
-    full_name: string;
-    student_number?: number;
-    class_id?: string;
-  };
-  classes?: {
-    class_number: number;
-    class_name?: string;
-  };
-  grades?: {
-    grade_number: number;
-    year: number;
-  };
-  schools?: {
-    name: string;
-  };
-}
-
-// Supabase JSON 타입 정의 (RPC 인자 등)
 export type Json =
   | string
   | number
@@ -230,320 +6,1033 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[]
 
-export interface UserProfileWithRelations extends UserProfile {
-  schools?: School;
-  classes?: Class & {
-    grades?: Grade;
-  };
-}
-
-// ====================================
-// API 요청/응답 타입
-// ====================================
-
-export interface CreateExerciseRecordDTO {
-  exercise_type: ExerciseType;
-  exercise_name: string;
-  exercise_date: string;
-  exercise_duration: number;
-  min_heart_rate?: number;
-  avg_heart_rate?: number;
-  max_heart_rate?: number;
-  notes?: string;
-}
-
-export interface CreateStudentDTO {
-  email: string;
-  full_name: string;
-  class_id: string;
-  student_number: number;
-}
-
-export interface CreateTeacherDTO {
-  email: string;
-  full_name: string;
-  school_id: string;
-}
-
-export interface UpdateUserProfileDTO {
-  full_name?: string;
-  class_id?: string;
-  student_number?: number;
-  is_active?: boolean;
-}
-
-export interface GrantRoleDTO {
-  email: string;
-  full_name: string;
-  role: UserRole;
-  school_id?: string;
-  class_id?: string;
-  student_number?: number;
-}
-
-// ====================================
-// 필터 및 쿼리 타입
-// ====================================
-
-export interface ExerciseRecordFilters {
-  user_id?: string;
-  school_id?: string;
-  class_id?: string;
-  exercise_type?: ExerciseType;
-  date_from?: string;
-  date_to?: string;
-}
-
-export interface UserProfileFilters {
-  role?: UserRole;
-  school_id?: string;
-  class_id?: string;
-  is_active?: boolean;
-}
-
-// ====================================
-// 통계 및 집계 타입
-// ====================================
-
-export interface HeartRateZone {
-  zone: 'rest' | 'light' | 'moderate' | 'hard' | 'maximum';
-  min_bpm: number;
-  max_bpm: number;
-  percentage: number;
-}
-
-export interface ExerciseSummary {
-  total_exercises: number;
-  total_duration: number;
-  avg_duration: number;
-  most_common_type: ExerciseType;
-  avg_heart_rate: number;
-  total_by_type: Record<ExerciseType, number>;
-}
-
-export interface ClassStatistics {
-  class_id: string;
-  class_number: number;
-  grade_number: number;
-  total_students: number;
-  active_students: number;
-  total_exercises: number;
-  avg_exercises_per_student: number;
-  total_duration_minutes: number;
-  avg_heart_rate: number;
-}
-
-export interface SchoolStatistics {
-  school_id: string;
-  school_name: string;
-  total_students: number;
-  total_teachers: number;
-  total_classes: number;
-  total_exercises: number;
-  avg_exercises_per_student: number;
-  total_duration_hours: number;
-}
-
-// ====================================
-// Supabase Database 타입 (자동 생성)
-// ====================================
-
-export interface Database {
+export type Database = {
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
+  __InternalSupabase: {
+    PostgrestVersion: "13.0.5"
+  }
   public: {
     Tables: {
-      schools: {
-        Row: School;
-        Insert: {
-          group_no: string;
-          name: string;
-          school_type: SchoolType;
-          recognition_key: string;
-          device_ids?: string[];
-        };
-        Update: Partial<{
-          group_no: string;
-          name: string;
-          school_type: SchoolType;
-          recognition_key: string;
-          device_ids?: string[];
-        }>;
-        Relationships: [];
-      };
-      devices: {
-        Row: Device;
-        Insert: Omit<Device, 'id'>;
-        Update: Partial<Device>;
-        Relationships: [];
-      };
-      device_management: {
-        Row: DeviceManagement;
-        Insert: {
-          school_id: string;
-          device_id: string;
-          start_date?: string | null;
-          end_date?: string | null;
-          limited_period?: boolean; // DB default false
-        };
-        Update: Partial<{
-          school_id: string;
-          device_id: string;
-          start_date?: string | null;
-          end_date?: string | null;
-          limited_period?: boolean;
-        }>;
-        Relationships: [];
-      };
-      grades: {
-        Row: Grade;
-        Insert: Omit<Grade, 'id' | 'created_at'>;
-        Update: Partial<Omit<Grade, 'id' | 'created_at'>>;
-        Relationships: [];
-      };
       classes: {
-        Row: Class;
-        Insert: Omit<Class, 'id' | 'created_at'>;
-        Update: Partial<Omit<Class, 'id' | 'created_at'>>;
-        Relationships: [];
-      };
-      user_profiles: {
-        Row: UserProfile;
-        Insert: Omit<UserProfile, 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<UserProfile, 'id' | 'created_at'>>;
-        Relationships: [];
-      };
-      exercise_records: {
-        Row: ExerciseRecord;
-        Insert: Omit<ExerciseRecord, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<ExerciseRecord, 'id' | 'created_at'>>;
-        Relationships: [];
-      };
-      permission_logs: {
-        Row: PermissionLog;
-        Insert: Omit<PermissionLog, 'id' | 'created_at'>;
-        Update: Record<string, never>;
-        Relationships: [];
-      };
-      operator_accounts: {
-        Row: OperatorAccount;
-        Insert: Omit<OperatorAccount, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<OperatorAccount, 'id' | 'created_at'>>;
-        Relationships: [];
-      };
-      students: {
-        Row: Student;
-        Insert: Omit<Student, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<Student, 'id' | 'created_at'>>;
-        Relationships: [];
-      };
-
-      contents: {
-        Row: Content
-        Insert: {
-          name: string
-          description?: string | null
-          color_hex?: string
+        Row: {
+          class_name: string | null
+          class_number: number
+          created_at: string
+          grade_id: string
+          id: string
         }
-        Update: Partial<{
-          name: string
-          description: string | null
-          color_hex: string
-        }>
-        Relationships: []
+        Insert: {
+          class_name?: string | null
+          class_number: number
+          created_at?: string
+          grade_id: string
+          id?: string
+        }
+        Update: {
+          class_name?: string | null
+          class_number?: number
+          created_at?: string
+          grade_id?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "classes_grade_id_fkey"
+            columns: ["grade_id"]
+            isOneToOne: false
+            referencedRelation: "grades"
+            referencedColumns: ["id"]
+          },
+        ]
       }
-
       content_devices: {
-        Row: ContentDevice
+        Row: {
+          content_id: string
+          device_id: string
+        }
         Insert: {
           content_id: string
           device_id: string
         }
-        Update: Record<string, never>
+        Update: {
+          content_id?: string
+          device_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "content_devices_content_id_fkey"
+            columns: ["content_id"]
+            isOneToOne: false
+            referencedRelation: "contents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "content_devices_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "devices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contents: {
+        Row: {
+          color_hex: string
+          color_key: string
+          created_at: string | null
+          description: string | null
+          id: string
+          name: string
+          updated_at: string | null
+        }
+        Insert: {
+          color_hex?: string
+          color_key?: string
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          name: string
+          updated_at?: string | null
+        }
+        Update: {
+          color_hex?: string
+          color_key?: string
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          name?: string
+          updated_at?: string | null
+        }
         Relationships: []
       }
-
-      school_contents: {
-        Row: SchoolContent
-        Insert: {
-          school_id: string
-          content_id: string
-          start_date?: string | null
-          end_date?: string | null
-          is_unlimited?: boolean
-        }
-        Update: Partial<{
-          school_id: string
-          content_id: string
-          start_date: string | null
+      device_management: {
+        Row: {
+          created_at: string
+          device_id: string | null
           end_date: string | null
-          is_unlimited: boolean
-        }>
-        Relationships: []
-      }
-
-      school_devices: {
-        Row: SchoolDevice
-        Insert: {
-          school_content_id: string
-          device_id: string
-          auth_key: string
-          memo?: string | null
+          id: string
+          limited_period: boolean
+          school_id: string | null
+          start_date: string | null
         }
-        Update: Partial<{
-          device_id: string
-          auth_key: string
-          memo: string | null
-        }>
+        Insert: {
+          created_at?: string
+          device_id?: string | null
+          end_date?: string | null
+          id?: string
+          limited_period?: boolean
+          school_id?: string | null
+          start_date?: string | null
+        }
+        Update: {
+          created_at?: string
+          device_id?: string | null
+          end_date?: string | null
+          id?: string
+          limited_period?: boolean
+          school_id?: string | null
+          start_date?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "device_management_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "devices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "device_management_school_id_fkey"
+            columns: ["school_id"]
+            isOneToOne: false
+            referencedRelation: "schools"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      devices: {
+        Row: {
+          device_name: string
+          icon_path: string | null
+          id: string
+          page: boolean
+          sort_order: number | null
+        }
+        Insert: {
+          device_name: string
+          icon_path?: string | null
+          id?: string
+          page?: boolean
+          sort_order?: number | null
+        }
+        Update: {
+          device_name?: string
+          icon_path?: string | null
+          id?: string
+          page?: boolean
+          sort_order?: number | null
+        }
         Relationships: []
       }
-    };
+      exercise_ingest_events: {
+        Row: {
+          class_no: number
+          created_at: string
+          exercise_type: string
+          grade: number
+          id: string
+          idempotency_key: string
+          month: number
+          recognition_key: string
+          student_no: number
+          year: number
+        }
+        Insert: {
+          class_no: number
+          created_at?: string
+          exercise_type: string
+          grade: number
+          id?: string
+          idempotency_key: string
+          month: number
+          recognition_key: string
+          student_no: number
+          year: number
+        }
+        Update: {
+          class_no?: number
+          created_at?: string
+          exercise_type?: string
+          grade?: number
+          id?: string
+          idempotency_key?: string
+          month?: number
+          recognition_key?: string
+          student_no?: number
+          year?: number
+        }
+        Relationships: []
+      }
+      exercise_records: {
+        Row: {
+          avg_accuracy: number | null
+          avg_bpm: number | null
+          avg_calories: number | null
+          avg_duration_seconds: number | null
+          avg_max_bpm: number | null
+          created_at: string
+          exercise_type: string
+          id: string
+          month: number
+          record_count: number
+          student_id: string
+          updated_at: string
+          year: number
+        }
+        Insert: {
+          avg_accuracy?: number | null
+          avg_bpm?: number | null
+          avg_calories?: number | null
+          avg_duration_seconds?: number | null
+          avg_max_bpm?: number | null
+          created_at?: string
+          exercise_type: string
+          id?: string
+          month: number
+          record_count?: number
+          student_id: string
+          updated_at?: string
+          year: number
+        }
+        Update: {
+          avg_accuracy?: number | null
+          avg_bpm?: number | null
+          avg_calories?: number | null
+          avg_duration_seconds?: number | null
+          avg_max_bpm?: number | null
+          created_at?: string
+          exercise_type?: string
+          id?: string
+          month?: number
+          record_count?: number
+          student_id?: string
+          updated_at?: string
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "exercise_records_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "student_details"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "exercise_records_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "students"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      grades: {
+        Row: {
+          created_at: string
+          grade_number: number
+          id: string
+          school_id: string
+          year: number
+        }
+        Insert: {
+          created_at?: string
+          grade_number: number
+          id?: string
+          school_id: string
+          year?: number
+        }
+        Update: {
+          created_at?: string
+          grade_number?: number
+          id?: string
+          school_id?: string
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "grades_school_id_fkey"
+            columns: ["school_id"]
+            isOneToOne: false
+            referencedRelation: "schools"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      heart_rate_records: {
+        Row: {
+          avg_bpm: number | null
+          created_at: string
+          id: string
+          max_bpm: number | null
+          min_bpm: number | null
+          month: number
+          record_count: number
+          student_id: string
+          updated_at: string
+          year: number
+        }
+        Insert: {
+          avg_bpm?: number | null
+          created_at?: string
+          id?: string
+          max_bpm?: number | null
+          min_bpm?: number | null
+          month: number
+          record_count?: number
+          student_id: string
+          updated_at?: string
+          year: number
+        }
+        Update: {
+          avg_bpm?: number | null
+          created_at?: string
+          id?: string
+          max_bpm?: number | null
+          min_bpm?: number | null
+          month?: number
+          record_count?: number
+          student_id?: string
+          updated_at?: string
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "heart_rate_records_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "student_details"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "heart_rate_records_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "students"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      operator_accounts: {
+        Row: {
+          created_at: string | null
+          id: string
+          is_active: boolean
+          password: string
+          role: Database["public"]["Enums"]["operator_role"]
+          school_id: string | null
+          updated_at: string | null
+          username: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          is_active?: boolean
+          password: string
+          role: Database["public"]["Enums"]["operator_role"]
+          school_id?: string | null
+          updated_at?: string | null
+          username: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          is_active?: boolean
+          password?: string
+          role?: Database["public"]["Enums"]["operator_role"]
+          school_id?: string | null
+          updated_at?: string | null
+          username?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "operator_accounts_school_id_fkey"
+            columns: ["school_id"]
+            isOneToOne: false
+            referencedRelation: "schools"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      permission_logs: {
+        Row: {
+          action: string
+          created_at: string
+          grantee_id: string
+          grantor_id: string
+          id: string
+          permission_type: string
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          grantee_id: string
+          grantor_id: string
+          id?: string
+          permission_type: string
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          grantee_id?: string
+          grantor_id?: string
+          id?: string
+          permission_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "permission_logs_grantee_id_fkey"
+            columns: ["grantee_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "permission_logs_grantor_id_fkey"
+            columns: ["grantor_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      school_contents: {
+        Row: {
+          content_id: string
+          created_at: string
+          end_date: string | null
+          id: string
+          is_unlimited: boolean | null
+          school_id: string
+          start_date: string | null
+        }
+        Insert: {
+          content_id: string
+          created_at?: string
+          end_date?: string | null
+          id?: string
+          is_unlimited?: boolean | null
+          school_id: string
+          start_date?: string | null
+        }
+        Update: {
+          content_id?: string
+          created_at?: string
+          end_date?: string | null
+          id?: string
+          is_unlimited?: boolean | null
+          school_id?: string
+          start_date?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "school_contents_content_id_fkey"
+            columns: ["content_id"]
+            isOneToOne: false
+            referencedRelation: "contents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "school_contents_school_id_fkey"
+            columns: ["school_id"]
+            isOneToOne: false
+            referencedRelation: "schools"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      school_device_page_blocks: {
+        Row: {
+          body: string | null
+          created_at: string
+          id: string
+          image_name: string | null
+          image_original_path: string | null
+          image_thumb_path: string | null
+          page_id: string
+          sort_order: number
+          subtitle: string | null
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          body?: string | null
+          created_at?: string
+          id?: string
+          image_name?: string | null
+          image_original_path?: string | null
+          image_thumb_path?: string | null
+          page_id: string
+          sort_order?: number
+          subtitle?: string | null
+          type: string
+          updated_at?: string
+        }
+        Update: {
+          body?: string | null
+          created_at?: string
+          id?: string
+          image_name?: string | null
+          image_original_path?: string | null
+          image_thumb_path?: string | null
+          page_id?: string
+          sort_order?: number
+          subtitle?: string | null
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "school_device_page_blocks_page_id_fkey"
+            columns: ["page_id"]
+            isOneToOne: false
+            referencedRelation: "school_device_pages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      school_device_pages: {
+        Row: {
+          created_at: string
+          id: string
+          image_name: string | null
+          image_original_path: string | null
+          image_thumb_path: string | null
+          kind: string
+          name: string
+          school_device_id: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          image_name?: string | null
+          image_original_path?: string | null
+          image_thumb_path?: string | null
+          kind?: string
+          name?: string
+          school_device_id: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          image_name?: string | null
+          image_original_path?: string | null
+          image_thumb_path?: string | null
+          kind?: string
+          name?: string
+          school_device_id?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "school_device_pages_school_device_id_fkey"
+            columns: ["school_device_id"]
+            isOneToOne: false
+            referencedRelation: "school_devices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      school_devices: {
+        Row: {
+          auth_key: string
+          created_at: string
+          device_id: string
+          id: string
+          memo: string | null
+          school_content_id: string
+          status: string
+          updated_at: string | null
+        }
+        Insert: {
+          auth_key: string
+          created_at?: string
+          device_id: string
+          id?: string
+          memo?: string | null
+          school_content_id: string
+          status?: string
+          updated_at?: string | null
+        }
+        Update: {
+          auth_key?: string
+          created_at?: string
+          device_id?: string
+          id?: string
+          memo?: string | null
+          school_content_id?: string
+          status?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "school_devices_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "devices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "school_devices_school_content_id_fkey"
+            columns: ["school_content_id"]
+            isOneToOne: false
+            referencedRelation: "school_contents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      school_heart_rate_mappings: {
+        Row: {
+          created_at: string | null
+          device_id: string
+          id: string
+          school_id: string
+          student_no: number
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          device_id: string
+          id?: string
+          school_id: string
+          student_no: number
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          device_id?: string
+          id?: string
+          school_id?: string
+          student_no?: number
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "school_heart_rate_mappings_school_id_fkey"
+            columns: ["school_id"]
+            isOneToOne: false
+            referencedRelation: "schools"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      schools: {
+        Row: {
+          created_at: string
+          group_no: string
+          id: string
+          name: string
+          recognition_key: string
+          school_type: number
+        }
+        Insert: {
+          created_at?: string
+          group_no: string
+          id?: string
+          name: string
+          recognition_key: string
+          school_type?: number
+        }
+        Update: {
+          created_at?: string
+          group_no?: string
+          id?: string
+          name?: string
+          recognition_key?: string
+          school_type?: number
+        }
+        Relationships: []
+      }
+      students: {
+        Row: {
+          birth_date: string | null
+          class_no: number
+          created_at: string
+          email: string | null
+          gender: string | null
+          grade: number
+          height_cm: number | null
+          id: string
+          name: string
+          notes: string | null
+          school_id: string
+          student_no: number
+          updated_at: string
+          weight_kg: number | null
+          year: number
+        }
+        Insert: {
+          birth_date?: string | null
+          class_no: number
+          created_at?: string
+          email?: string | null
+          gender?: string | null
+          grade: number
+          height_cm?: number | null
+          id?: string
+          name: string
+          notes?: string | null
+          school_id: string
+          student_no: number
+          updated_at?: string
+          weight_kg?: number | null
+          year?: number
+        }
+        Update: {
+          birth_date?: string | null
+          class_no?: number
+          created_at?: string
+          email?: string | null
+          gender?: string | null
+          grade?: number
+          height_cm?: number | null
+          id?: string
+          name?: string
+          notes?: string | null
+          school_id?: string
+          student_no?: number
+          updated_at?: string
+          weight_kg?: number | null
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "students_school_id_fkey"
+            columns: ["school_id"]
+            isOneToOne: false
+            referencedRelation: "schools"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_profiles: {
+        Row: {
+          birth_date: string | null
+          class_id: string | null
+          created_at: string
+          email: string
+          full_name: string
+          granted_at: string | null
+          granted_by: string | null
+          id: string
+          is_active: boolean
+          role: string
+          school_id: string | null
+          student_number: number | null
+          updated_at: string
+        }
+        Insert: {
+          birth_date?: string | null
+          class_id?: string | null
+          created_at?: string
+          email?: string
+          full_name: string
+          granted_at?: string | null
+          granted_by?: string | null
+          id: string
+          is_active?: boolean
+          role: string
+          school_id?: string | null
+          student_number?: number | null
+          updated_at?: string
+        }
+        Update: {
+          birth_date?: string | null
+          class_id?: string | null
+          created_at?: string
+          email?: string
+          full_name?: string
+          granted_at?: string | null
+          granted_by?: string | null
+          id?: string
+          is_active?: boolean
+          role?: string
+          school_id?: string | null
+          student_number?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_profiles_class_id_fkey"
+            columns: ["class_id"]
+            isOneToOne: false
+            referencedRelation: "classes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_profiles_granted_by_fkey"
+            columns: ["granted_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_profiles_school_id_fkey"
+            columns: ["school_id"]
+            isOneToOne: false
+            referencedRelation: "schools"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+    }
     Views: {
       student_details: {
-        Row: StudentDetail;
-        Insert: never;
-        Update: never;
-        Relationships: [];
-      };
-      exercise_statistics: {
-        Row: ExerciseStatistics;
-        Insert: never;
-        Update: never;
-        Relationships: [];
-      };
-    };
+        Row: {
+          birth_date: string | null
+          class_no: number | null
+          created_at: string | null
+          email: string | null
+          gender: string | null
+          grade: number | null
+          height_cm: number | null
+          id: string | null
+          name: string | null
+          notes: string | null
+          school_id: string | null
+          school_name: string | null
+          student_no: number | null
+          updated_at: string | null
+          weight_kg: number | null
+          year: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "students_school_id_fkey"
+            columns: ["school_id"]
+            isOneToOne: false
+            referencedRelation: "schools"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+    }
     Functions: {
+      upsert_exercise_record_by_key: {
+        Args: {
+          p_avg_accuracy: number
+          p_avg_bpm: number
+          p_avg_calories: number
+          p_avg_duration_seconds: number
+          p_avg_max_bpm: number
+          p_class_no: number
+          p_exercise_type: string
+          p_grade: number
+          p_month: number
+          p_recognition_key: string
+          p_student_no: number
+          p_year: number
+        }
+        Returns: string
+      }
       upsert_exercise_record_by_key_idem: {
         Args: {
-          p_idempotency_key: string
-          p_recognition_key: string
-          p_year: number
-          p_grade: number
+          p_avg_accuracy: number
+          p_avg_bpm: number
+          p_avg_calories: number
+          p_avg_duration_seconds: number
+          p_avg_max_bpm: number
           p_class_no: number
-          p_student_no: number
-          p_exercise_type: ExerciseType
+          p_exercise_type: string
+          p_grade: number
+          p_idempotency_key: string
           p_month: number
-          p_avg_duration_seconds: number | null
-          p_avg_accuracy: number | null
-          p_avg_bpm: number | null
-          p_avg_max_bpm: number | null
-          p_avg_calories: number | null
+          p_recognition_key: string
+          p_student_no: number
+          p_year: number
         }
         Returns: boolean
       }
       upsert_exercise_records_batch: {
-        Args: {
-          p_items: Json
-        }
+        Args: { p_items: Json }
         Returns: number
       }
-    };
+    }
     Enums: {
-      user_role: UserRole;
-      exercise_type: ExerciseType;
-      operator_role: OperatorRole;
-    };
+      operator_role: "admin" | "school"
+    }
     CompositeTypes: {
-      [_ in never]: never;
-    };
-  };
+      [_ in never]: never
+    }
+  }
 }
 
+type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
+
+type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
+
+export type Tables<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+      Row: infer R
+    }
+    ? R
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])
+    ? (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
+        Row: infer R
+      }
+      ? R
+      : never
+    : never
+
+export type TablesInsert<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Insert: infer I
+    }
+    ? I
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Insert: infer I
+      }
+      ? I
+      : never
+    : never
+
+export type TablesUpdate<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Update: infer U
+    }
+    ? U
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Update: infer U
+      }
+      ? U
+      : never
+    : never
+
+export type Enums<
+  DefaultSchemaEnumNameOrOptions extends
+    | keyof DefaultSchema["Enums"]
+    | { schema: keyof DatabaseWithoutInternals },
+  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
+    : never = never,
+> = DefaultSchemaEnumNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
+  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
+    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
+    : never
+
+export type CompositeTypes<
+  PublicCompositeTypeNameOrOptions extends
+    | keyof DefaultSchema["CompositeTypes"]
+    | { schema: keyof DatabaseWithoutInternals },
+  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
+    : never = never,
+> = PublicCompositeTypeNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
+  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
+    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
+    : never
+
+export const Constants = {
+  public: {
+    Enums: {
+      operator_role: ["admin", "school"],
+    },
+  },
+} as const

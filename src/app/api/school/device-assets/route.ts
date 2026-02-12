@@ -84,8 +84,10 @@ async function getOperatorWithSchool(request: NextRequest) {
   if (!jwtSecret) return { error: '서버 설정 오류 (JWT_SECRET 누락)', status: 500 as const }
 
   try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const decoded = jwt.verify(accessToken, jwtSecret) as any
     const { data: account, error } = await (supabaseAdmin
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .from('operator_accounts') as any)
       .select('id, role, school_id, is_active')
       .eq('id', decoded.sub)
@@ -95,13 +97,17 @@ async function getOperatorWithSchool(request: NextRequest) {
     if (!account.is_active) return { error: '비활성화된 계정입니다.', status: 403 as const }
 
     // 관리자 acting 지원
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if ((account as any).role === 'admin') {
       const actingSchoolId = request.cookies.get('acting_school_id')?.value || null
       if (!actingSchoolId) return { error: '관리자 acting 컨텍스트가 설정되지 않았습니다.', status: 403 as const }
       return { schoolId: actingSchoolId as string }
     }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if ((account as any).role === 'school') {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if (!(account as any).school_id) return { error: '학교 정보가 누락되었습니다.', status: 400 as const }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return { schoolId: (account as any).school_id as string }
     }
     return { error: '권한이 없습니다.', status: 403 as const }
@@ -111,6 +117,7 @@ async function getOperatorWithSchool(request: NextRequest) {
 }
 
 async function resolveAuthKeyForSchoolDevice(schoolDeviceId: string, schoolId: string) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabaseAdmin as any)
     .from('school_devices')
     .select(
@@ -166,16 +173,22 @@ export async function GET(request: NextRequest) {
       return true
     })
     .map((f) => ({
-    name: f.name,
-    path: `${prefix}/${f.name}`,
-    id: (f as any).id ?? null,
-    updated_at: (f as any).updated_at ?? null,
-    created_at: (f as any).created_at ?? null,
-    last_accessed_at: (f as any).last_accessed_at ?? null,
-    metadata: (f as any).metadata ?? null,
-  }))
+      name: f.name,
+      path: `${prefix}/${f.name}`,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      id: (f as any).id ?? null,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      updated_at: (f as any).updated_at ?? null,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      created_at: (f as any).created_at ?? null,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      last_accessed_at: (f as any).last_accessed_at ?? null,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      metadata: (f as any).metadata ?? null,
+    }))
 
   // 원본/썸네일 페어링: 원본=path, 썸네일=path + THUMB_SUFFIX
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const byBase = new Map<string, { original?: any; thumb?: any }>()
   for (const r of rows) {
     if (r.path.endsWith(THUMB_SUFFIX)) {
@@ -191,6 +204,7 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const items: any[] = []
   for (const [basePath, pair] of byBase.entries()) {
     const originalPath = pair.original?.path || basePath
@@ -273,7 +287,7 @@ export async function POST(request: NextRequest) {
       // 썸네일 실패 시 원본도 롤백(일관성 유지)
       try {
         await supabaseAdmin.storage.from(BUCKET).remove([key])
-      } catch {}
+      } catch { }
       return NextResponse.json({ error: `썸네일 생성/업로드 실패: ${thumbErr.message}` }, { status: 500 })
     }
 

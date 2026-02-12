@@ -81,7 +81,7 @@ export default function SchoolsPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || '컨텐츠 목록 조회 실패')
       setContentMaster(data.items || [])
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e)
     }
   }
@@ -94,8 +94,9 @@ export default function SchoolsPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || '목록 조회 실패')
       setItems(data.items)
-    } catch (e: any) {
-      setError(e.message || '목록 조회 실패')
+    } catch (e: unknown) {
+      const err = e as Error
+      setError(err.message || '목록 조회 실패')
     } finally {
       setLoading(false)
     }
@@ -125,15 +126,16 @@ export default function SchoolsPage() {
           ...school,
           contents: school.contents.map((c) => ({
             ...c,
-            devices: c.devices.map((d: any) => (d.id === memoTarget.schoolDeviceId ? { ...d, memo: memoText } : d)),
+            devices: c.devices.map((d: SchoolDeviceItem) => (d.id === memoTarget.schoolDeviceId ? { ...d, memo: memoText } : d)),
           })),
         })),
       )
 
       setMemoModalOpen(false)
       setMemoTarget(null)
-    } catch (e: any) {
-      alert(e.message || '메모 저장 실패')
+    } catch (e: unknown) {
+      const err = e as Error
+      alert(err.message || '메모 저장 실패')
     } finally {
       setMemoSaving(false)
     }
@@ -170,18 +172,20 @@ export default function SchoolsPage() {
     setContentAssignments([])
     setFormError('')
     setIsOpen(true)
-    
+
     try {
       const res = await fetch(`/api/admin/schools/${row.group_no}`, { credentials: 'include' })
       const data = await res.json()
       if (res.ok) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const assignments: ContentAssignment[] = (data.contents || []).map((c: any) => {
           // 각 디바이스별 수량 계산
           const quantities: { [id: string]: number } = {}
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           c.devices.forEach((d: any) => {
             quantities[d.device_id] = (quantities[d.device_id] || 0) + 1
           })
-          
+
           return {
             content_id: c.content_id,
             name: c.name,
@@ -212,18 +216,19 @@ export default function SchoolsPage() {
         throw new Error(data.error || '삭제 실패')
       }
       await fetchList()
-    } catch (e: any) {
-      alert(e.message || '삭제 실패')
+    } catch (e: unknown) {
+      const err = e as Error
+      alert(err.message || '삭제 실패')
     }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setFormError('')
-    
+
     try {
       if (!/^\d{4}$/.test(form.group_no)) return setFormError('그룹번호는 숫자 4자리여야 합니다.')
-      
+
       const payload = {
         ...form,
         content_assignments: contentAssignments.map(a => ({
@@ -245,16 +250,17 @@ export default function SchoolsPage() {
         credentials: 'include',
         body: JSON.stringify(payload),
       })
-      
+
       if (!res.ok) {
         const data = await res.json()
         throw new Error(data.error || '저장 실패')
       }
-      
+
       setIsOpen(false)
       await fetchList()
-    } catch (e: any) {
-      setFormError(e.message || '저장 실패')
+    } catch (e: unknown) {
+      const err = e as Error
+      setFormError(err.message || '저장 실패')
     }
   }
 
@@ -262,7 +268,7 @@ export default function SchoolsPage() {
     if (checked) {
       const initialQuantities: { [id: string]: number } = {}
       content.devices.forEach(d => initialQuantities[d.id] = 1)
-      
+
       setContentAssignments(prev => [...prev, {
         content_id: content.id,
         name: content.name,
@@ -338,7 +344,7 @@ export default function SchoolsPage() {
           <code className="bg-gray-100 px-1 rounded text-red-600 font-mono">{d.auth_key}</code>
           <button
             type="button"
-            onClick={() => openMemoModal(String((d as any).id), `${d.device_name} #${n}`, d.memo)}
+            onClick={() => openMemoModal(String(d.id), `${d.device_name} #${n}`, d.memo)}
             className="ml-2 px-2 py-0.5 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 text-[11px]"
           >
             메모
@@ -361,10 +367,12 @@ export default function SchoolsPage() {
     return mod === 0 ? 0 : h % mod
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const themeKey = (c: any) => String(c?.id || c?.content_id || c?.name || '')
 
   const fallbackPalette = ['#DBEAFE', '#DCFCE7', '#FEF3C7', '#FFE4E6', '#EDE9FE', '#CFFAFE', '#ECFCCB', '#E0F2FE']
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const resolveContentHex = (c: any) => {
     const v = String(c?.color_hex || '').trim()
     if (/^#[0-9a-fA-F]{6}$/.test(v)) return v
@@ -377,6 +385,7 @@ export default function SchoolsPage() {
     return '#CBD5E1' // slate-300
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const renderContentBadge = (c: any) => {
     const bg = resolveContentHex(c)
     return (
@@ -389,6 +398,7 @@ export default function SchoolsPage() {
     )
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const renderContentDeviceCard = (c: any) => {
     const bg = resolveContentHex(c)
     return (
@@ -607,7 +617,7 @@ export default function SchoolsPage() {
                               )}
                             </div>
                           </div>
-                          
+
                           <div className="space-y-2">
                             <label className="text-xs font-medium text-gray-500">디바이스 수량 설정</label>
                             {master?.devices.map(d => (
@@ -688,92 +698,92 @@ export default function SchoolsPage() {
                                 {editingId &&
                                   (((a.existing_devices || []).some((x) => x.device_id === d.id && !!x.id) ||
                                     ((a.pending_additions || {})[d.id] || 0) > 0)) && (
-                                  <div className="flex flex-wrap items-center gap-1">
-                                    <span className="text-[11px] text-gray-500 mr-1">개별삭제</span>
+                                    <div className="flex flex-wrap items-center gap-1">
+                                      <span className="text-[11px] text-gray-500 mr-1">개별삭제</span>
 
-                                    {/* 기존 발급분 */}
-                                    {sortInstances((a.existing_devices || []).filter((x) => x.device_id === d.id && !!x.id)).map((inst, instIdx) => (
-                                      <button
-                                        key={String(inst.id)}
-                                        type="button"
-                                        onClick={() => {
-                                          const next = [...contentAssignments]
-                                          const assignment: ContentAssignment = {
-                                            ...next[idx],
-                                            device_quantities: { ...next[idx].device_quantities },
-                                            existing_devices: next[idx].existing_devices ? [...next[idx].existing_devices!] : undefined,
-                                            remove_school_device_ids: next[idx].remove_school_device_ids ? [...next[idx].remove_school_device_ids!] : [],
-                                            pending_additions: next[idx].pending_additions ? { ...next[idx].pending_additions } : {},
-                                          }
+                                      {/* 기존 발급분 */}
+                                      {sortInstances((a.existing_devices || []).filter((x) => x.device_id === d.id && !!x.id)).map((inst, instIdx) => (
+                                        <button
+                                          key={String(inst.id)}
+                                          type="button"
+                                          onClick={() => {
+                                            const next = [...contentAssignments]
+                                            const assignment: ContentAssignment = {
+                                              ...next[idx],
+                                              device_quantities: { ...next[idx].device_quantities },
+                                              existing_devices: next[idx].existing_devices ? [...next[idx].existing_devices!] : undefined,
+                                              remove_school_device_ids: next[idx].remove_school_device_ids ? [...next[idx].remove_school_device_ids!] : [],
+                                              pending_additions: next[idx].pending_additions ? { ...next[idx].pending_additions } : {},
+                                            }
 
-                                          if (!inst.id) return
+                                            if (!inst.id) return
 
-                                          assignment.remove_school_device_ids = Array.from(
-                                            new Set([...(assignment.remove_school_device_ids || []), String(inst.id)]),
+                                            assignment.remove_school_device_ids = Array.from(
+                                              new Set([...(assignment.remove_school_device_ids || []), String(inst.id)]),
+                                            )
+                                            assignment.existing_devices = (assignment.existing_devices || []).filter((x) => String(x.id) !== String(inst.id))
+
+                                            // UI 수량도 같이 감소
+                                            const cur = assignment.device_quantities[d.id] || 0
+                                            assignment.device_quantities[d.id] = Math.max(0, cur - 1)
+
+                                            next[idx] = assignment
+                                            setContentAssignments(next)
+                                          }}
+                                          className="inline-flex items-center gap-1 rounded-full border border-rose-300 bg-rose-100 px-2 py-0.5 text-[11px] text-rose-800 hover:bg-rose-200"
+                                          title={`#${instIdx + 1}, ${inst.auth_key} 삭제`}
+                                        >
+                                          <span className="font-mono">#{instIdx + 1},</span>
+                                          <span className="font-mono text-[10px] text-rose-700/80 max-w-[160px] truncate" title={inst.auth_key}>
+                                            {inst.auth_key}
+                                          </span>
+                                          <span className="text-rose-700">✕</span>
+                                        </button>
+                                      ))}
+
+                                      {/* 추가 대기분(저장 시 생성될 인스턴스) */}
+                                      {(() => {
+                                        const existingCount = sortInstances((a.existing_devices || []).filter((x) => x.device_id === d.id && !!x.id)).length
+                                        const pending = (a.pending_additions || {})[d.id] || 0
+                                        if (pending <= 0) return null
+
+                                        return Array.from({ length: pending }).map((_, pi) => {
+                                          const labelNum = existingCount + pi + 1
+                                          return (
+                                            <button
+                                              key={`pending-${d.id}-${pi}-${labelNum}`}
+                                              type="button"
+                                              onClick={() => {
+                                                const next = [...contentAssignments]
+                                                const assignment: ContentAssignment = {
+                                                  ...next[idx],
+                                                  device_quantities: { ...next[idx].device_quantities },
+                                                  pending_additions: next[idx].pending_additions ? { ...next[idx].pending_additions } : {},
+                                                }
+
+                                                const curPending = (assignment.pending_additions || {})[d.id] || 0
+                                                if (curPending <= 0) return
+
+                                                // pending 1개 취소 + 수량 1 감소
+                                                assignment.pending_additions = assignment.pending_additions || {}
+                                                assignment.pending_additions[d.id] = Math.max(0, curPending - 1)
+                                                const curQty = assignment.device_quantities[d.id] || 0
+                                                assignment.device_quantities[d.id] = Math.max(0, curQty - 1)
+
+                                                next[idx] = assignment
+                                                setContentAssignments(next)
+                                              }}
+                                              className="inline-flex items-center gap-1 rounded-full border border-dashed border-rose-300 bg-rose-100 px-2 py-0.5 text-[11px] text-rose-800 hover:bg-rose-200"
+                                              title={`#${labelNum} 추가대기(취소)`}
+                                            >
+                                              <span className="font-mono">#{labelNum}</span>
+                                              <span className="text-rose-700">✕</span>
+                                            </button>
                                           )
-                                          assignment.existing_devices = (assignment.existing_devices || []).filter((x) => String(x.id) !== String(inst.id))
-
-                                          // UI 수량도 같이 감소
-                                          const cur = assignment.device_quantities[d.id] || 0
-                                          assignment.device_quantities[d.id] = Math.max(0, cur - 1)
-
-                                          next[idx] = assignment
-                                          setContentAssignments(next)
-                                        }}
-                                        className="inline-flex items-center gap-1 rounded-full border border-rose-300 bg-rose-100 px-2 py-0.5 text-[11px] text-rose-800 hover:bg-rose-200"
-                                        title={`#${instIdx + 1}, ${inst.auth_key} 삭제`}
-                                      >
-                                        <span className="font-mono">#{instIdx + 1},</span>
-                                        <span className="font-mono text-[10px] text-rose-700/80 max-w-[160px] truncate" title={inst.auth_key}>
-                                          {inst.auth_key}
-                                        </span>
-                                        <span className="text-rose-700">✕</span>
-                                      </button>
-                                    ))}
-
-                                    {/* 추가 대기분(저장 시 생성될 인스턴스) */}
-                                    {(() => {
-                                      const existingCount = sortInstances((a.existing_devices || []).filter((x) => x.device_id === d.id && !!x.id)).length
-                                      const pending = (a.pending_additions || {})[d.id] || 0
-                                      if (pending <= 0) return null
-
-                                      return Array.from({ length: pending }).map((_, pi) => {
-                                        const labelNum = existingCount + pi + 1
-                                        return (
-                                          <button
-                                            key={`pending-${d.id}-${pi}-${labelNum}`}
-                                            type="button"
-                                            onClick={() => {
-                                              const next = [...contentAssignments]
-                                              const assignment: ContentAssignment = {
-                                                ...next[idx],
-                                                device_quantities: { ...next[idx].device_quantities },
-                                                pending_additions: next[idx].pending_additions ? { ...next[idx].pending_additions } : {},
-                                              }
-
-                                              const curPending = (assignment.pending_additions || {})[d.id] || 0
-                                              if (curPending <= 0) return
-
-                                              // pending 1개 취소 + 수량 1 감소
-                                              assignment.pending_additions = assignment.pending_additions || {}
-                                              assignment.pending_additions[d.id] = Math.max(0, curPending - 1)
-                                              const curQty = assignment.device_quantities[d.id] || 0
-                                              assignment.device_quantities[d.id] = Math.max(0, curQty - 1)
-
-                                              next[idx] = assignment
-                                              setContentAssignments(next)
-                                            }}
-                                            className="inline-flex items-center gap-1 rounded-full border border-dashed border-rose-300 bg-rose-100 px-2 py-0.5 text-[11px] text-rose-800 hover:bg-rose-200"
-                                            title={`#${labelNum} 추가대기(취소)`}
-                                          >
-                                            <span className="font-mono">#{labelNum}</span>
-                                            <span className="text-rose-700">✕</span>
-                                          </button>
-                                        )
-                                      })
-                                    })()}
-                                  </div>
-                                )}
+                                        })
+                                      })()}
+                                    </div>
+                                  )}
                               </div>
                             ))}
                           </div>

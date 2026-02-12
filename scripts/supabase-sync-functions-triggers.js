@@ -21,6 +21,7 @@
  */
 
 /* eslint-disable no-console */
+/* eslint-disable @typescript-eslint/no-require-imports */
 const fs = require('node:fs')
 const dns = require('node:dns').promises
 const path = require('node:path')
@@ -69,8 +70,8 @@ async function preflightHost({ label, connectionString }) {
         await dns.resolve6(host)
         console.log(
           `[sync] ⚠️ ${label} host "${host}" 는 IPv4(A 레코드)가 없고 IPv6(AAAA)만 있을 수 있습니다. ` +
-            `현재 PC/네트워크가 IPv6 DB 접속을 지원하지 않으면 Node/pg에서 ENOTFOUND로 실패할 수 있어요. ` +
-            `Supabase 대시보드 Connect에서 "Session pooler" 연결 문자열(aws-0-...pooler.supabase.com)을 사용하세요.`
+          `현재 PC/네트워크가 IPv6 DB 접속을 지원하지 않으면 Node/pg에서 ENOTFOUND로 실패할 수 있어요. ` +
+          `Supabase 대시보드 Connect에서 "Session pooler" 연결 문자열(aws-0-...pooler.supabase.com)을 사용하세요.`
         )
       } catch {
         // ignore
@@ -211,11 +212,11 @@ async function connectWithHints({ client, label, connectionString }) {
     if (/password authentication failed/i.test(msg)) {
       console.error(
         `[sync] 힌트: DB 비밀번호가 프로젝트마다 다릅니다(계정이 달라서 더더욱). ` +
-          `각 프로젝트 대시보드 > Connect에서 문자열을 복사한 뒤, 그 프로젝트의 DB 비밀번호로 정확히 교체했는지 확인하세요.`
+        `각 프로젝트 대시보드 > Connect에서 문자열을 복사한 뒤, 그 프로젝트의 DB 비밀번호로 정확히 교체했는지 확인하세요.`
       )
       console.error(
         `[sync] 힌트: 비밀번호에 '@', ':', '/', '?', '#', '&' 같은 문자가 있으면 URL 인코딩이 필요합니다. ` +
-          `예) '@' -> '%40', ':' -> '%3A'`
+        `예) '@' -> '%40', ':' -> '%3A'`
       )
     }
 
@@ -275,10 +276,10 @@ async function main() {
       await execSql(test, triggersSql, 'TEST triggers')
       console.log('[sync] ✅ done')
     } finally {
-      await test.end().catch(() => {})
+      await test.end().catch(() => { })
     }
   } finally {
-    await prod.end().catch(() => {})
+    await prod.end().catch(() => { })
   }
 }
 

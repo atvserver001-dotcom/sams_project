@@ -239,27 +239,27 @@ function parseHub900AntHeartRate(mergeBytes: Buffer, antPacket15: Buffer) {
   }
 }
 
-function safeHexToU32(hex: string) {
-  const n = parseInt(hex, 16)
-  if (!Number.isFinite(n)) return null
-  // 32bit unsigned
-  return n >>> 0
-}
+// function safeHexToU32(hex: string) {
+//   const n = parseInt(hex, 16)
+//   if (!Number.isFinite(n)) return null
+//   // 32bit unsigned
+//   return n >>> 0
+// }
 
-function macHexToDecimalString(macHex: string) {
-  // macHex: 12 hex chars (48-bit). 10진 문자열로 반환.
-  try {
-    if (!macHex) return null
-    const cleaned = macHex.replaceAll(':', '').replaceAll('-', '').trim()
-    // 48bit(12 hex)까지만 안전 정수 범위 내에서 처리
-    if (!/^[0-9a-fA-F]{1,12}$/.test(cleaned)) return null
-    const n = parseInt(cleaned, 16)
-    if (!Number.isFinite(n)) return null
-    return String(n)
-  } catch {
-    return null
-  }
-}
+// function macHexToDecimalString(macHex: string) {
+//   // macHex: 12 hex chars (48-bit). 10진 문자열로 반환.
+//   try {
+//     if (!macHex) return null
+//     const cleaned = macHex.replaceAll(':', '').replaceAll('-', '').trim()
+//     // 48bit(12 hex)까지만 안전 정수 범위 내에서 처리
+//     if (!/^[0-9a-fA-F]{1,12}$/.test(cleaned)) return null
+//     const n = parseInt(cleaned, 16)
+//     if (!Number.isFinite(n)) return null
+//     return String(n)
+//   } catch {
+//     return null
+//   }
+// }
 
 function macToId7(mac: string) {
   // BLE MAC(48bit)에서 "7자리 센서ID"로 보이는 값을 만들기 위한 보수적 매핑
@@ -286,12 +286,12 @@ function batteryPercentFromRaw(raw: number | null | undefined) {
   return Math.round((v / 255) * 100)
 }
 
-function reverseHexBytes(hex: string) {
-  const cleaned = hex.trim().toLowerCase()
-  const pairs = cleaned.match(/.{1,2}/g)
-  if (!pairs) return null
-  return pairs.reverse().join('')
-}
+// function reverseHexBytes(hex: string) {
+//   const cleaned = hex.trim().toLowerCase()
+//   const pairs = cleaned.match(/.{1,2}/g)
+//   if (!pairs) return null
+//   return pairs.reverse().join('')
+// }
 
 function bleDeviceIdToId7(hex8: string) {
   // hub900.a.b.e(bytes,pos,len)는 big-endian으로 읽음.
@@ -443,6 +443,7 @@ function parseBpmFromText(text: string): number | null {
   if (!trimmed) return null
   if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
     try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const obj = JSON.parse(trimmed) as any
       const candidates = [
         obj?.bpm,
@@ -518,11 +519,11 @@ function parseHdlcFrames(input: Buffer) {
   const FLAG = 0x7e
   const ESC = 0x7d
 
-  let firstFlag = input.indexOf(FLAG)
+  const firstFlag = input.indexOf(FLAG)
   if (firstFlag < 0) return { frames, rest: input }
 
   // 마지막 flag를 찾고, 그 이후는 미완성 프레임으로 남김
-  let lastFlag = input.lastIndexOf(FLAG)
+  const lastFlag = input.lastIndexOf(FLAG)
   if (lastFlag === firstFlag) return { frames, rest: input.subarray(firstFlag) }
 
   let i = firstFlag + 1
@@ -899,9 +900,11 @@ async function ensureBridge(host: string, port: number): Promise<HubBridge> {
                   const ble = parseHub900BleHeartRate(mergeBytes, pkt)
                   if (ble && ble.hr >= 30 && ble.hr <= 240) {
                     const batPct = batteryPercentFromRaw(ble.bat)
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     const mac = (ble as any).bleMac as string | undefined
                     const sensor7FromMac = mac ? macToId7(mac) : (ble.deviceIdHex && ble.deviceIdHex.length === 12 ? macToId7(ble.deviceIdHex) : null)
                     const sensor7FromDev = (ble.deviceIdHex && ble.deviceIdHex.length === 8) ? bleDeviceIdToId7(ble.deviceIdHex) : null
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     const sensor7FromName = (ble as any).bleNameId7 as number | null | undefined
                     // 같은 센서가 adv=161/162(정식)과 adv=3(0x180D)로 섞여 들어오므로
                     // 1) adv=161/162에서 얻은 deviceId 기반 7자리 ID를 MAC 기준으로 캐시
@@ -944,8 +947,10 @@ async function ensureBridge(host: string, port: number): Promise<HubBridge> {
                       ble_oxygen: ble.oxygen,
                       battery_percent: batPct,
                       battery_raw: ble.bat,
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
                       rssi: (ble as any).rssi ?? null,
-                      raw: `[${PARSER_TAG} hub900 ble-hr] mac=${mac ?? '-'} adv=${ble.advType} name=${(ble as any).bleName ?? '-'} id7_name=${(ble as any).bleNameId7 ?? '-'} devId=${ble.deviceIdHex || '-'} id7_mac=${sensor7FromMac ?? '-'} id7_dev=${sensor7FromDev ?? '-'} id7_cache=${cached7 ?? '-'} chosen=${chosen7 ?? '-'} hr=${ble.hr} bat=${ble.bat ?? '-'} | pkt(${pkt.length}) ${hexPreview(pkt, 160)} | merge(${mergeBytes.length}) ${hexPreview(mergeBytes, 160)}`,
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      raw: `[${PARSER_TAG} hub900 ble-hr] mac=${mac ?? '-'} adv=${ble.advType} name=${(ble as any).bleName ?? '-'} id7_name=${(ble as any).bleNameId7 ?? '-'} devId=${ble.deviceIdHex || '-'} id7_mac=${sensor7FromName ?? '-'} id7_dev=${sensor7FromDev ?? '-'} id7_cache=${cached7 ?? '-'} chosen=${chosen7 ?? '-'} hr=${ble.hr} bat=${ble.bat ?? '-'} | pkt(${pkt.length}) ${hexPreview(pkt, 160)} | merge(${mergeBytes.length}) ${hexPreview(mergeBytes, 160)}`,
                       source: 'listen:tcp',
                       format: 'ble',
                       bytes: pkt.length,
@@ -1201,6 +1206,7 @@ async function ensureBridge(host: string, port: number): Promise<HubBridge> {
   })
 
   const udpBind = new Promise<void>((resolve, reject) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const onError = (e: any) => {
       udpSocket.off('listening', onListening)
       reject(e)
@@ -1360,9 +1366,11 @@ async function connectToHubTcp(host: string, port: number, onMsg: (m: HeartRateM
                 const ble = parseHub900BleHeartRate(mergeBytes, pkt)
                 if (ble && ble.hr >= 30 && ble.hr <= 240) {
                   const batPct = batteryPercentFromRaw(ble.bat)
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   const mac = (ble as any).bleMac as string | undefined
                   const sensor7FromMac = mac ? macToId7(mac) : (ble.deviceIdHex && ble.deviceIdHex.length === 12 ? macToId7(ble.deviceIdHex) : null)
                   const sensor7FromDev = (ble.deviceIdHex && ble.deviceIdHex.length === 8) ? bleDeviceIdToId7(ble.deviceIdHex) : null
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   const sensor7FromName = (ble as any).bleNameId7 as number | null | undefined
                   if (ble.advType === 161 || ble.advType === 162) {
                     setBleId7Cached(mac ?? null, sensor7FromDev)
@@ -1399,7 +1407,9 @@ async function connectToHubTcp(host: string, port: number, onMsg: (m: HeartRateM
                     ble_oxygen: ble.oxygen,
                     battery_percent: batPct,
                     battery_raw: ble.bat,
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     rssi: (ble as any).rssi ?? null,
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     raw: `[${PARSER_TAG} hub900 ble-hr] mac=${mac ?? '-'} adv=${ble.advType} name=${(ble as any).bleName ?? '-'} id7_name=${(ble as any).bleNameId7 ?? '-'} devId=${ble.deviceIdHex || '-'} id7_mac=${sensor7FromMac ?? '-'} id7_dev=${sensor7FromDev ?? '-'} id7_cache=${cached7 ?? '-'} chosen=${chosen7 ?? '-'} hr=${ble.hr} bat=${ble.bat ?? '-'} | pkt(${pkt.length}) ${hexPreview(pkt, 160)} | merge(${mergeBytes.length}) ${hexPreview(mergeBytes, 160)}`,
                     source: 'connect:tcp',
                     format: 'ble',
@@ -1540,6 +1550,7 @@ async function connectToHubWs(wsUrl: string, onMsg: (m: HeartRateMessage) => voi
 
   ws.on('open', () => onMsg({ type: 'open', ts: nowIso(), message: `[${PARSER_TAG}] 허브 WS 연결됨: ${wsUrl}`, source: 'connect:ws' }))
   ws.on('message', (data) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const buf = typeof data === 'string' ? Buffer.from(data, 'utf8') : Buffer.from(data as any)
 
     if (buf.includes(0x7e)) {
@@ -1614,6 +1625,7 @@ async function connectToHubWs(wsUrl: string, onMsg: (m: HeartRateMessage) => voi
       bytes: buf.length,
     })
   })
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ws.on('error', (err: any) => onMsg({ type: 'error', ts: nowIso(), message: `[${PARSER_TAG}] ${err?.message || '허브 WS 오류'}`, source: 'connect:ws' }))
   ws.on('close', () => onMsg({ type: 'close', ts: nowIso(), message: `[${PARSER_TAG}] 허브 WS 연결 종료`, source: 'connect:ws' }))
 
@@ -1688,6 +1700,7 @@ export async function GET(req: NextRequest) {
         let bridge: HubBridge
         try {
           bridge = await ensureBridge(host, port)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
           write({
             type: 'error',

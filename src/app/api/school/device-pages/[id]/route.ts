@@ -13,7 +13,9 @@ async function getOperatorWithSchool(request: NextRequest) {
   if (!jwtSecret) return { error: '서버 설정 오류 (JWT_SECRET 누락)', status: 500 as const }
 
   try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const decoded = jwt.verify(accessToken, jwtSecret) as any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: account, error } = await (supabaseAdmin.from('operator_accounts') as any)
       .select('id, role, school_id, is_active')
       .eq('id', decoded.sub)
@@ -23,13 +25,17 @@ async function getOperatorWithSchool(request: NextRequest) {
     if (!account.is_active) return { error: '비활성화된 계정입니다.', status: 403 as const }
 
     // 관리자 acting 지원
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if ((account as any).role === 'admin') {
       const actingSchoolId = request.cookies.get('acting_school_id')?.value || null
       if (!actingSchoolId) return { error: '관리자 acting 컨텍스트가 설정되지 않았습니다.', status: 403 as const }
       return { schoolId: actingSchoolId as string }
     }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if ((account as any).role === 'school') {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if (!(account as any).school_id) return { error: '학교 정보가 누락되었습니다.', status: 400 as const }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return { schoolId: (account as any).school_id as string }
     }
     return { error: '권한이 없습니다.', status: 403 as const }
@@ -39,6 +45,7 @@ async function getOperatorWithSchool(request: NextRequest) {
 }
 
 async function resolvePageWithSchool(pageId: string, schoolId: string) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabaseAdmin as any)
     .from('school_device_pages')
     .select(
@@ -81,12 +88,14 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
   if (!resolved.ok) return NextResponse.json({ error: resolved.error }, { status: resolved.status })
 
   const body = await request.json().catch(() => ({}))
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const patch: any = {}
   if (body.name != null) patch.name = String(body.name || '')
   if (body.sort_order != null) patch.sort_order = Number(body.sort_order || 0)
 
   if (Object.keys(patch).length === 0) return NextResponse.json({ error: '변경할 필드가 없습니다.' }, { status: 400 })
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabaseAdmin as any)
     .from('school_device_pages')
     .update(patch)
@@ -110,13 +119,16 @@ export async function DELETE(request: NextRequest, ctx: { params: Promise<{ id: 
   const resolved = await resolvePageWithSchool(pageId, schoolId)
   if (!resolved.ok) return NextResponse.json({ error: resolved.error }, { status: resolved.status })
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const schoolDeviceId = String((resolved.row as any).school_device_id)
 
   // 페이지 삭제(블록은 FK cascade)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error: delErr } = await (supabaseAdmin as any).from('school_device_pages').delete().eq('id', pageId)
   if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 })
 
   // 이미지 페이지 이름 재정렬: 1-이미지, 2-이미지...
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: remaining, error: listErr } = await (supabaseAdmin as any)
     .from('school_device_pages')
     .select('id, kind, name, sort_order')
@@ -126,10 +138,12 @@ export async function DELETE(request: NextRequest, ctx: { params: Promise<{ id: 
 
   if (listErr) return NextResponse.json({ error: listErr.message }, { status: 500 })
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const images = (remaining || []).filter((p: any) => String(p.kind) === 'images')
   for (let i = 0; i < images.length; i++) {
     const desired = `${i + 1}-이미지`
     if (String(images[i].name) === desired) continue
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (supabaseAdmin as any).from('school_device_pages').update({ name: desired }).eq('id', images[i].id)
   }
 

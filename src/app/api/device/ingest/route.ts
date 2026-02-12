@@ -21,10 +21,12 @@ type IngestItem = {
   avg_calories?: number | null
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function isValidExerciseType(v: any): v is ExerciseType {
   return v === 'endurance' || v === 'flexibility' || v === 'strength'
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function validateItem(it: any): { ok: true; item: IngestItem } | { ok: false; message: string } {
   const requiredFields = [
     'idempotency_key',
@@ -72,6 +74,7 @@ function validateItem(it: any): { ok: true; item: IngestItem } | { ok: false; me
 async function ensureStudentExistsForItem(it: IngestItem) {
   // recognition_key 로 학교 조회
   const { data: school, error: schoolError } = await (supabaseAdmin
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .from('schools') as any)
     .select('id')
     .eq('recognition_key', it.recognition_key)
@@ -86,6 +89,7 @@ async function ensureStudentExistsForItem(it: IngestItem) {
 
   // 이미 존재하는지 먼저 조회 (중복 방지)
   const { data: existing, error: selectError } = await (supabaseAdmin
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .from('students') as any)
     .select('id')
     .eq('school_id', school.id)
@@ -115,11 +119,14 @@ async function ensureStudentExistsForItem(it: IngestItem) {
   }
 
   const { error: insertError } = await (supabaseAdmin
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .from('students') as any)
     .insert(payload)
 
   if (insertError) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const code = (insertError as any).code || ''
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const message = (insertError as any).message || ''
     // 유니크 인덱스가 있는 경우, 동시 요청에서 중복이 나도 OK 로 처리
     if (code === '23505' || message.includes('duplicate key value violates unique constraint')) {
@@ -139,6 +146,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Content-Type: application/json 필요' }, { status: 415 })
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let body: any
   try {
     body = await request.json()
@@ -147,6 +155,7 @@ export async function POST(request: NextRequest) {
   }
 
   // 배치: body가 배열이거나 { items: [...] }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const items: any[] | null = Array.isArray(body) ? body : Array.isArray(body?.items) ? body.items : null
   if (items && items.length > 0) {
     const validated: IngestItem[] = []
@@ -164,6 +173,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data, error } = await (supabaseAdmin as any).rpc('upsert_exercise_records_batch', {
       p_items: validated,
     })
@@ -184,6 +194,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: ensured.message }, { status: 400 })
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabaseAdmin as any).rpc('upsert_exercise_record_by_key_idem', {
     p_idempotency_key: it.idempotency_key,
     p_recognition_key: it.recognition_key,

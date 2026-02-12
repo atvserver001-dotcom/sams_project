@@ -12,8 +12,10 @@ async function getOperatorWithSchool(request: NextRequest) {
   if (!jwtSecret) return { error: '서버 설정 오류 (JWT_SECRET 누락)', status: 500 as const }
 
   try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const decoded = jwt.verify(accessToken, jwtSecret) as any
     const { data: account, error } = await (supabaseAdmin
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .from('operator_accounts') as any)
       .select('id, role, school_id, is_active')
       .eq('id', decoded.sub)
@@ -23,13 +25,17 @@ async function getOperatorWithSchool(request: NextRequest) {
     if (!account.is_active) return { error: '비활성화된 계정입니다.', status: 403 as const }
 
     // 관리자 acting 지원
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if ((account as any).role === 'admin') {
       const actingSchoolId = request.cookies.get('acting_school_id')?.value || null
       if (!actingSchoolId) return { error: '관리자 acting 컨텍스트가 설정되지 않았습니다.', status: 403 as const }
       return { schoolId: actingSchoolId as string }
     }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if ((account as any).role === 'school') {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if (!(account as any).school_id) return { error: '학교 정보가 누락되었습니다.', status: 400 as const }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return { schoolId: (account as any).school_id as string }
     }
     return { error: '권한이 없습니다.', status: 403 as const }
@@ -45,6 +51,7 @@ export async function GET(request: NextRequest) {
   const schoolId = auth.schoolId as string
 
   const { data: mgmt, error: mgmtErr } = await (supabaseAdmin
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .from('device_management') as any)
     .select('device_id, start_date, end_date, limited_period, created_at')
     .eq('school_id', schoolId)
@@ -53,9 +60,9 @@ export async function GET(request: NextRequest) {
   if (mgmtErr) return NextResponse.json({ error: mgmtErr.message }, { status: 500 })
 
   const mgmtRows = (mgmt ?? []) as Array<{ device_id: string; start_date: string | null; end_date: string | null; limited_period: boolean }>
-  const deviceIds = Array.from(new Set(mgmtRows.map((m) => m.device_id)))
+  const deviceIds = Array.from(new Set(mgmtRows.map((m) => m.device_id).filter(Boolean)))
 
-  let idToDevice = new Map<string, { device_name: string }>()
+  const idToDevice = new Map<string, { device_name: string }>()
   if (deviceIds.length) {
     const { data: deviceRows, error: devErr } = await supabaseAdmin
       .from('devices')

@@ -53,8 +53,9 @@ export default function AccountsPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || '목록 조회 실패')
       setItems(data.items)
-    } catch (e: any) {
-      setError(e.message || '목록 조회 실패')
+    } catch (e: unknown) {
+      const err = e as Error
+      setError(err.message || '목록 조회 실패')
     } finally {
       setLoading(false)
     }
@@ -68,7 +69,7 @@ export default function AccountsPage() {
       const map: SchoolBriefMap = {}
       for (const item of (data.items || [])) {
         if (item && item.id) {
-          map[item.id] = { group_no: item.group_no, name: item.name, min_end_date: (item as any).min_end_date ?? null }
+          map[item.id] = { group_no: item.group_no, name: item.name, min_end_date: (item as { min_end_date?: string }).min_end_date ?? null }
         }
       }
       setSchoolMap(map)
@@ -110,8 +111,9 @@ export default function AccountsPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || '삭제 실패')
       await fetchList()
-    } catch (e: any) {
-      alert(e.message || '삭제 실패')
+    } catch (e: unknown) {
+      const err = e as Error
+      alert(err.message || '삭제 실패')
     }
   }
 
@@ -140,8 +142,9 @@ export default function AccountsPage() {
       if (!res.ok) throw new Error(data.error || '저장 실패')
       setIsOpen(false)
       await fetchList()
-    } catch (e: any) {
-      alert(e.message || '저장 실패')
+    } catch (e: unknown) {
+      const err = e as Error
+      alert(err.message || '저장 실패')
     }
   }
 
@@ -281,22 +284,22 @@ export default function AccountsPage() {
                       {row.is_active ? '활성' : '비활성'}
                     </span>
                   </td>
-                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                  {(() => {
-                    const s = row.school_id ? schoolMap[row.school_id] : undefined
-                    const end = s?.min_end_date || null
-                    if (!end) return '-'
-                    const today = new Date()
-                    const endDate = new Date(end + 'T00:00:00')
-                    const diffMs = endDate.getTime() - new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()
-                    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-                    if (diffDays < 0) {
-                      return <span className="text-red-600">기간종료({diffDays}일)</span>
-                    }
-                    return <span className="text-gray-900">{diffDays}일 남음</span>
-                  })()}
-                </td>
-                <td className="px-4 py-3 whitespace-nowrap text-right text-sm">
+                  <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                    {(() => {
+                      const s = row.school_id ? schoolMap[row.school_id] : undefined
+                      const end = s?.min_end_date || null
+                      if (!end) return '-'
+                      const today = new Date()
+                      const endDate = new Date(end + 'T00:00:00')
+                      const diffMs = endDate.getTime() - new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()
+                      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+                      if (diffDays < 0) {
+                        return <span className="text-red-600">기간종료({diffDays}일)</span>
+                      }
+                      return <span className="text-gray-900">{diffDays}일 남음</span>
+                    })()}
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap text-right text-sm">
                     <div className="inline-flex items-center gap-2">
                       <button onClick={() => handleOpenEdit(row)} className="px-3 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded">수정</button>
                       <button onClick={() => handleDelete(row.id)} className="px-3 py-1 bg-red-100 hover:bg-red-200 text-red-700 rounded">삭제</button>

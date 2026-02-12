@@ -49,6 +49,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   // 기존 icon_path 조회
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: existing, error: exErr } = await (supabaseAdmin as any)
     .from('devices')
     .select('id, icon_path')
@@ -70,6 +71,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 })
 
   // DB 업데이트
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: updated, error: updErr } = await (supabaseAdmin as any)
     .from('devices')
     .update({ icon_path: objectPath })

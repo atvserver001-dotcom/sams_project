@@ -30,6 +30,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Content-Type: application/json 필요' }, { status: 415 })
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let body: any
   try {
     body = await request.json()
@@ -43,6 +44,7 @@ export async function POST(request: NextRequest) {
   const known_items = Array.isArray(body?.known_items) ? body.known_items : null
 
   // auth_key 유효성 확인(존재하는 디바이스인지)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: deviceRow, error: devErr } = await (supabaseAdmin as any)
     .from('school_devices')
     .select('id')
@@ -66,12 +68,15 @@ export async function POST(request: NextRequest) {
     .filter((f) => !!f.name)
     .filter((f) => !String(f.name).endsWith(THUMB_SUFFIX))
     .map((f) => ({
-    name: f.name,
-    path: `${prefix}/${f.name}`,
-    updated_at: (f as any).updated_at ?? null,
-    created_at: (f as any).created_at ?? null,
-    metadata: (f as any).metadata ?? null,
-  }))
+      name: f.name,
+      path: `${prefix}/${f.name}`,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      updated_at: (f as any).updated_at ?? null,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      created_at: (f as any).created_at ?? null,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      metadata: (f as any).metadata ?? null,
+    }))
 
   // 현재 스냅샷(전체)
   const currentPaths = new Set(rows.map((r) => r.path))
@@ -100,13 +105,14 @@ export async function POST(request: NextRequest) {
   // 디바이스가 없거나(updated_at 다름) => 다운로드해야 함
   const candidates = known_items
     ? rows.filter((r) => {
-        if (!knownPaths.has(r.path)) return true
-        const knownU = knownUpdatedAt.get(r.path) || ''
-        const curU = String(r.updated_at || '')
-        return knownU !== curU
-      })
+      if (!knownPaths.has(r.path)) return true
+      const knownU = knownUpdatedAt.get(r.path) || ''
+      const curU = String(r.updated_at || '')
+      return knownU !== curU
+    })
     : rows
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const to_download: any[] = []
   for (const r of candidates) {
     const { data: signed, error: signErr } = await supabaseAdmin.storage.from(BUCKET).createSignedUrl(r.path, 60 * 60 * 24)

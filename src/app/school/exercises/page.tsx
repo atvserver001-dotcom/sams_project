@@ -113,7 +113,7 @@ export default function ExercisesPage() {
       if (!res.ok) throw new Error(data.error || '운동 기록 조회 실패')
       const apiRows = (data.rows || []) as ExerciseRow[]
       setRows(apiRows)
-    } catch (e: any) {
+    } catch (e: unknown) {
       // 실패 시 빈 데이터로라도 렌더링되도록 학생 목록 기준으로 초기화
       const empty12 = Array.from({ length: 12 }, () => null as number | null)
       const mapped: ExerciseRow[] = studs

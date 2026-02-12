@@ -2,9 +2,22 @@
 
 import React, { useEffect, useRef, useState, useMemo } from 'react'
 
-type ConnectionState = 'connecting' | 'open' | 'closed' | 'error' | 'idle'
+type ConnectionState = 'connecting' | 'open' | 'closed' | 'error' | 'idle' | 'app_launched'
 
 const BRIDGE_URL = 'ws://localhost:8888'
+
+// 학급 데이터 타입
+interface StudentMapping {
+  no: number
+  name: string
+  device_id: string
+}
+
+interface ClassData {
+  grade: number
+  class_no: number
+  students: StudentMapping[]
+}
 
 function fmtTime(iso?: string | null) {
   if (!iso) return '-'
@@ -30,6 +43,10 @@ export default function HeartRateTestPage() {
   const [sessionActive, setSessionActive] = useState(false)
   const [statusText, setStatusText] = useState<string>('대기 중')
 
+  // 학급 선택
+  const [selectedGrade, setSelectedGrade] = useState<number>(1)
+  const [selectedClass, setSelectedClass] = useState<number>(1)
+
   const [currentBpm, setCurrentBpm] = useState<number | null>(null)
   const [lastTs, setLastTs] = useState<string | null>(null)
 
@@ -50,60 +67,187 @@ export default function HeartRateTestPage() {
   const wsRef = useRef<WebSocket | null>(null)
   const retryTimerRef = useRef<NodeJS.Timeout | null>(null)
 
-  const connect = () => {
-    disconnect()
+  // 마운트 시 소켓 정리만 수행 (자동 연결 제거)
+  useEffect(() => {
+    return () => disconnect()
+  }, [])
 
-    setState('connecting')
-    setStatusText(`Fitness Bridge 연결 중... (${BRIDGE_URL})`)
-
+  // 학급 데이터 조회 및 전송
+  const sendClassDataToApp = async () => {
     try {
-      const ws = new WebSocket(BRIDGE_URL)
-      wsRef.current = ws
-
-      ws.onopen = () => {
-        setState('open')
-        setStatusText('Fitness Bridge 연결됨')
-
-        // 자동으로 세션 시작
-        setTimeout(() => {
-          startSession()
-        }, 500)
+      // 1. 학생 정보 조회
+      const currentYear = new Date().getFullYear()
+      const studentsRes = await fetch(
+        `/api/school/students?year=${currentYear}&grade=${selectedGrade}&class_no=${selectedClass}`
+      )
+      if (!studentsRes.ok) {
+        throw new Error('학생 정보 조회 실패')
       }
+      const studentsData = await studentsRes.json()
+      const students = studentsData.students || []
 
-      ws.onmessage = (evt) => {
-        try {
-          const msg = JSON.parse(evt.data)
-          handleFitnessBridgeMessage(msg)
-        } catch (err) {
-          console.error('메시지 파싱 오류:', err)
+      // 2. 심박계 매핑 조회
+      const mappingsRes = await fetch('/api/school/heart-rate-mappings')
+      if (!mappingsRes.ok) {
+        throw new Error('심박계 매핑 조회 실패')
+      }
+      const mappingsData = await mappingsRes.json()
+      const mappings = mappingsData.mappings || []
+
+      // 3. 학생 데이터 구성 (1~30번)
+      const studentMappings: StudentMapping[] = []
+      for (let i = 1; i <= 30; i++) {
+        const student = students.find((s: { student_no: number; name?: string }) => s.student_no === i)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const mapping = mappings.find((m: any) => m.student_no === i)
+
+        if (student && mapping) {
+          studentMappings.push({
+            no: i,
+            name: student.name || `학생 ${i}`,
+            device_id: mapping.device_id
+          })
         }
       }
 
-      ws.onerror = (e) => {
-        console.error('WebSocket 오류:', e)
-        setState('error')
-        setStatusText('연결 오류 (Fitness Bridge 서버가 실행 중인지 확인하세요)')
+      // 4. WebSocket으로 학급 데이터 전송
+      const classData: ClassData = {
+        grade: selectedGrade,
+        class_no: selectedClass,
+        students: studentMappings
       }
 
-      ws.onclose = () => {
-        setState('closed')
-        setStatusText('연결 종료')
-        setSessionActive(false)
-        wsRef.current = null
-
-        // 자동 재연결
-        retryTimerRef.current = setTimeout(() => {
-          connect()
-        }, 3000)
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({
+          command: 'set_class_data',
+          data: classData
+        }))
+        setStatusText(`${selectedGrade}학년 ${selectedClass}반 정보 전송 완료 (${studentMappings.length}명)`)
+      } else {
+        setStatusText('앱이 연결되지 않았습니다')
       }
-    } catch (err: unknown) {
-      setState('error')
-      const message = err instanceof Error ? err.message : String(err)
-      setStatusText(`연결 실패: ${message}`)
+    } catch (error) {
+      console.error('학급 데이터 전송 오류:', error)
+      setStatusText('학급 데이터 전송 실패')
     }
   }
 
+  const launchApp = () => {
+    window.location.assign('fitness-bridge://start')
+    setState('connecting')
+    setStatusText('앱을 호출했습니다. 확인 중...')
+
+    let isResolved = false
+    // const probeStartTime = Date.now()
+
+    // 공통 앱 감지 함수
+    const probe = () => {
+      if (isResolved) return
+
+      const checkWs = new WebSocket(BRIDGE_URL)
+      checkWs.onopen = () => {
+        if (!isResolved) {
+          isResolved = true
+          checkWs.close()
+          setState('app_launched')
+          setStatusText('앱 실행됨 (측정 시작을 눌러주세요)')
+          cleanup()
+        }
+      }
+      checkWs.onerror = () => {
+        checkWs.close()
+      }
+    }
+
+    // 1. 주기적 폴링 (Chrome '항상 허용' 옵션 대응)
+    const intervalId = setInterval(probe, 1000)
+
+    // 2. 포커스 복귀 감지 (취소 또는 수동 열기 대응)
+    const onFocus = () => {
+      // 사용자가 브라우저로 돌아오면 즉시 한번 더 확인
+      setTimeout(probe, 500)
+    }
+    window.addEventListener('focus', onFocus)
+
+    // 3. 최종 안전 타임아웃 (8초 동안 실패 시 복구)
+    const safetyTimeoutId = setTimeout(() => {
+      if (!isResolved) {
+        isResolved = true
+        setState('idle')
+        setStatusText('앱이 실행되지 않았습니다. 다시 시도해 주세요.')
+        cleanup()
+      }
+    }, 8000)
+
+    const cleanup = () => {
+      clearInterval(intervalId)
+      clearTimeout(safetyTimeoutId)
+      window.removeEventListener('focus', onFocus)
+    }
+  }
+
+  const connect = () => {
+    disconnect()
+    setState('connecting')
+    setStatusText('Fitness Bridge와 연결 중입니다...')
+
+    const ws = new WebSocket(BRIDGE_URL)
+    wsRef.current = ws
+
+    // 타임아웃 처리 (5초 내 연결 실패 시 에러)
+    retryTimerRef.current = setTimeout(() => {
+      if (wsRef.current?.readyState !== WebSocket.OPEN) {
+        setState('error')
+        setStatusText('앱이 켜져 있는지 확인해 주세요.')
+      }
+    }, 5000)
+
+    ws.onopen = () => {
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
+
+      setState('open')
+      setStatusText('Fitness Bridge 연결됨')
+
+      // 연결되자마자 세션 시작
+      setTimeout(() => startSession(), 200)
+    }
+
+    ws.onmessage = (evt) => {
+      try {
+        const msg = JSON.parse(evt.data)
+        handleFitnessBridgeMessage(msg)
+      } catch (err) {
+        console.error('메시지 파싱 오류:', err)
+      }
+    }
+
+    ws.onerror = (e) => {
+      console.error('WebSocket 오류:', e)
+    }
+
+    ws.onclose = () => {
+      // 중요: 연결 시도 중(connecting)이거나 앱 실행 시퀀스 중에는 
+      // 개별 소켓의 닫힘 이벤트를 무시합니다. (성급한 '연결 종료' 안내 방지)
+      // 최종 결과는 12초 타임아웃 타이머(retryTimerRef)에서 결정됩니다.
+      if (wsRef.current === ws) {
+        // 이미 연결된 이후에 끊긴 경우에만 Closed 처리
+        if (state === 'open') {
+          setState('closed')
+          setStatusText('연결 종료')
+          setSessionActive(false)
+          wsRef.current = null
+        }
+      }
+    }
+  }
+
+  // handleStart는 더 이상 필요 없으므로 제거 (개별 버튼 onClick 사용)
+
   const disconnect = () => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ command: 'quit_app' }))
+    }
+
     if (wsRef.current) {
       wsRef.current.close()
       wsRef.current = null
@@ -129,6 +273,13 @@ export default function HeartRateTestPage() {
       wsRef.current.send(JSON.stringify({ command: 'stop_session' }))
     }
   }
+
+  // Effect to use stopSession on unmount via cleanup is already handled by disconnect() which closes socket
+  // preventing unused variable warning by effectively logging or ignoring if not intended for direct UI usage
+  useEffect(() => {
+    // Just to acknowledge stopSession exists for potential future use
+    void stopSession
+  }, [])
 
   interface FitnessBridgeMessage {
     type?: string
@@ -280,6 +431,47 @@ export default function HeartRateTestPage() {
 
       {/* 상태 및 제어 */}
       <div className="bg-white/95 rounded-lg shadow p-6 space-y-4">
+        {/* 학급 선택 */}
+        <div className="bg-gradient-to-r from-purple-50 to-pink-50 border border-purple-200 rounded-lg p-4">
+          <h3 className="text-sm font-semibold text-purple-900 mb-3">📚 학급 선택</h3>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-gray-700">학년:</label>
+              <select
+                value={selectedGrade}
+                onChange={(e) => setSelectedGrade(Number(e.target.value))}
+                className="border border-gray-300 rounded px-3 py-1.5 text-sm"
+              >
+                {[1, 2, 3, 4, 5, 6].map(g => (
+                  <option key={g} value={g}>{g}학년</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-gray-700">반:</label>
+              <select
+                value={selectedClass}
+                onChange={(e) => setSelectedClass(Number(e.target.value))}
+                className="border border-gray-300 rounded px-3 py-1.5 text-sm"
+              >
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(c => (
+                  <option key={c} value={c}>{c}반</option>
+                ))}
+              </select>
+            </div>
+            <button
+              onClick={sendClassDataToApp}
+              disabled={state !== 'open'}
+              className={`px-4 py-2 rounded-lg text-sm font-semibold ${state === 'open'
+                ? 'bg-purple-600 text-white hover:bg-purple-700'
+                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                }`}
+            >
+              학급 정보 전송
+            </button>
+          </div>
+        </div>
+
         {/* 연결 전 안내 메시지 */}
         {state === 'idle' && (
           <div className="bg-blue-50 border-l-4 border-blue-400 p-4 mb-4">
@@ -317,11 +509,20 @@ export default function HeartRateTestPage() {
                 <h3 className="text-sm font-medium text-red-800">연결 실패</h3>
                 <div className="mt-2 text-sm text-red-700">
                   <p>{statusText}</p>
-                  <p className="mt-2 font-semibold">해결 방법:</p>
+                  <div className="mt-3 p-3 bg-red-100/50 rounded-md border border-red-200">
+                    <p className="font-semibold text-red-900 mb-1">앱을 처음 사용하시나요?</p>
+                    <p className="text-xs text-red-800 mb-2">윈도우 전용 Fitness Bridge 앱을 설치해야 실시간 연동이 가능합니다.</p>
+                    <a
+                      href="/downloads/FitnessBridge-Portable.exe"
+                      className="inline-flex items-center px-3 py-1.5 bg-red-600 text-white text-xs font-bold rounded hover:bg-red-700 transition-colors shadow-sm"
+                    >
+                      <span>📥 Fitness Bridge 다운로드</span>
+                    </a>
+                  </div>
+                  <p className="mt-3 font-semibold">이미 앱을 설치했다면:</p>
                   <ul className="list-disc list-inside mt-1 space-y-1">
-                    <li>Fitness Bridge가 실행 중인지 확인 (포트 8888)</li>
-                    <li>방화벽이 WebSocket 연결을 차단하지 않는지 확인</li>
-                    <li>다른 프로그램이 포트 8888을 사용하지 않는지 확인</li>
+                    <li>브라우저 팝업에서 &quot;열기&quot;를 허용했는지 확인</li>
+                    <li>사용 중인 백신/방화벽이 앱을 차단하는지 확인</li>
                   </ul>
                 </div>
               </div>
@@ -352,39 +553,47 @@ export default function HeartRateTestPage() {
             {statusText}
           </div>
           <div className="flex gap-2">
-            {state === 'idle' || state === 'error' || state === 'closed' || state === 'connecting' ? (
+            {state === 'idle' && (
               <button
-                onClick={connect}
-                disabled={state === 'connecting'}
-                className="px-6 py-2.5 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-sm font-semibold hover:from-indigo-700 hover:to-purple-700 disabled:from-gray-400 disabled:to-gray-400 disabled:cursor-not-allowed shadow-md"
+                onClick={launchApp}
+                className="px-8 py-2.5 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-sm font-bold hover:from-indigo-700 hover:to-purple-700 shadow-lg active:scale-95 transition-all"
               >
-                {state === 'connecting' ? '연결 중...' : '시작'}
+                시작
               </button>
-            ) : (
-              <>
-                {sessionActive ? (
-                  <button
-                    onClick={stopSession}
-                    className="px-4 py-2 rounded bg-rose-600 text-white text-sm font-medium hover:bg-rose-700"
-                  >
-                    세션 중지
-                  </button>
-                ) : (
-                  <button
-                    onClick={startSession}
-                    disabled={state !== 'open'}
-                    className="px-4 py-2 rounded bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-                  >
-                    세션 시작
-                  </button>
-                )}
+            )}
+
+            {(state === 'app_launched' || state === 'error' || state === 'closed') && (
+              <button
+                onClick={() => connect()}
+                className="px-8 py-2.5 rounded-lg bg-gradient-to-r from-green-600 to-emerald-600 text-white text-sm font-bold hover:from-green-700 hover:to-emerald-700 shadow-lg active:scale-95 transition-all"
+              >
+                측정 시작
+              </button>
+            )}
+
+            {state === 'connecting' && (
+              <button
+                disabled
+                className="px-8 py-2.5 rounded-lg bg-gray-400 text-white text-sm font-bold cursor-not-allowed shadow-md animate-pulse"
+              >
+                연결 중...
+              </button>
+            )}
+
+            {state === 'open' && (
+              <div className="flex items-center gap-3">
+                <span className="flex h-3 w-3 relative">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                </span>
+                <span className="text-sm font-semibold text-red-600 mr-2">측정 중</span>
                 <button
                   onClick={disconnect}
-                  className="px-4 py-2 rounded bg-gray-600 text-white text-sm font-medium hover:bg-gray-700"
+                  className="px-6 py-2 rounded-lg bg-gray-800 text-white text-sm font-bold hover:bg-black shadow-md transition-colors"
                 >
                   중지
                 </button>
-              </>
+              </div>
             )}
           </div>
         </div>

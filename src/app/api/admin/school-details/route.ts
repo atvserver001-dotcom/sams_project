@@ -24,11 +24,13 @@ export async function GET(req: NextRequest) {
 
   if (schoolsErr) return NextResponse.json({ error: schoolsErr.message }, { status: 500 })
 
-  const schoolIds = (schools ?? []).map((s: any) => s.id as string)
+  const schoolIds = (schools ?? []).map((s) => s.id as string)
 
   // 2) 교사 계정 수 집계
-  let teacherCountBySchoolId = new Map<string, number>()
+  const teacherCountBySchoolId = new Map<string, number>()
   if (schoolIds.length) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: accounts, error: accErr } = await (supabaseAdmin.from('operator_accounts') as any)
       .select('school_id, role')
       .in('school_id', schoolIds)
@@ -44,8 +46,10 @@ export async function GET(req: NextRequest) {
   }
 
   // 3) 제품 구성(디바이스) 수 집계: school_contents -> school_devices
-  let deviceCountBySchoolId = new Map<string, number>()
+  const deviceCountBySchoolId = new Map<string, number>()
   if (schoolIds.length) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: schoolContents, error: scErr } = await (supabaseAdmin.from('school_contents') as any)
       .select('id, school_id')
       .in('school_id', schoolIds)
@@ -54,6 +58,8 @@ export async function GET(req: NextRequest) {
 
     if (!scErr && schoolContentsArr.length > 0) {
       const scIds = schoolContentsArr.map((sc) => sc.id)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: devices, error: devErr } = await (supabaseAdmin.from('school_devices') as any)
         .select('school_content_id')
         .in('school_content_id', scIds)
@@ -74,7 +80,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const items = (schools ?? []).map((s: any, idx: number) => ({
+  const items = (schools ?? []).map((s: { name: string; group_no: string; id: string }, idx: number) => ({
     index: from + idx + 1,
     name: s.name as string,
     group_no: s.group_no as string,

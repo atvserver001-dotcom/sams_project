@@ -33,6 +33,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Content-Type: application/json 필요' }, { status: 415 })
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let body: any
   try {
     body = await request.json()
@@ -44,6 +45,7 @@ export async function POST(request: NextRequest) {
   if (!auth_key) return NextResponse.json({ error: 'auth_key 필수' }, { status: 400 })
 
   // auth_key 유효성/상태 확인
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: deviceRow, error: devErr } = await (supabaseAdmin as any)
     .from('school_devices')
     .select('id, status')
@@ -60,6 +62,7 @@ export async function POST(request: NextRequest) {
 
   const schoolDeviceId = String(deviceRow.id)
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: pagesRaw, error: pErr } = await (supabaseAdmin as any)
     .from('school_device_pages')
     .select('id, school_device_id, kind, name, sort_order, image_name, image_original_path, image_thumb_path, created_at, updated_at')
@@ -69,6 +72,7 @@ export async function POST(request: NextRequest) {
 
   if (pErr) return NextResponse.json({ error: pErr.message }, { status: 500 })
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const pages = (pagesRaw || []).map((p: any) => ({
     id: String(p.id),
     school_device_id: String(p.school_device_id),
@@ -82,18 +86,22 @@ export async function POST(request: NextRequest) {
     updated_at: p.updated_at ?? null,
   }))
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const pageIds = pages.map((p: any) => p.id)
   const { data: blocksRaw, error: bErr } = pageIds.length
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ? await (supabaseAdmin as any)
-        .from('school_device_page_blocks')
-        .select('id, page_id, type, subtitle, body, sort_order, image_name, image_original_path, image_thumb_path, created_at, updated_at')
-        .in('page_id', pageIds)
-        .order('sort_order', { ascending: true })
-        .order('created_at', { ascending: true })
+      .from('school_device_page_blocks')
+      .select('id, page_id, type, subtitle, body, sort_order, image_name, image_original_path, image_thumb_path, created_at, updated_at')
+      .in('page_id', pageIds)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     : { data: [], error: null as any }
 
   if (bErr) return NextResponse.json({ error: bErr.message }, { status: 500 })
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const blocks = (blocksRaw || []).map((b: any) => ({
     id: String(b.id),
     page_id: String(b.page_id),
@@ -108,6 +116,7 @@ export async function POST(request: NextRequest) {
     updated_at: b.updated_at ?? null,
   }))
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const blocksByPageId: Record<string, any[]> = {}
   for (const b of blocks) {
     blocksByPageId[b.page_id] = blocksByPageId[b.page_id] || []
@@ -115,11 +124,14 @@ export async function POST(request: NextRequest) {
   }
 
   const items = await Promise.all(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     pages.map(async (p: any) => {
       const page_full_url = await sign(p.image_original_path)
       const page_thumb_url = (await sign(p.image_thumb_path)) || page_full_url
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const pageBlocks = (blocksByPageId[p.id] || []) as any[]
       const blocksWithUrls = await Promise.all(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         pageBlocks.map(async (b: any) => {
           const full = await sign(b.image_original_path)
           const thumb = (await sign(b.image_thumb_path)) || full

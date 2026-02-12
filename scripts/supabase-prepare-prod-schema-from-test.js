@@ -17,6 +17,7 @@
  */
 
 /* eslint-disable no-console */
+/* eslint-disable @typescript-eslint/no-require-imports */
 const fs = require('node:fs')
 const path = require('node:path')
 const process = require('node:process')
@@ -68,7 +69,7 @@ async function preflightHost({ label, connectionString }) {
         await dns.resolve6(host)
         console.log(
           `[prep] ⚠️ ${label} host "${host}" 는 IPv4(A 레코드)가 없고 IPv6(AAAA)만 있을 수 있습니다. ` +
-            `Windows/회사망에서 접속 실패하면 Supabase Connect의 "Session pooler" DB URL을 사용하세요.`
+          `Windows/회사망에서 접속 실패하면 Supabase Connect의 "Session pooler" DB URL을 사용하세요.`
         )
       } catch {
         // ignore
@@ -443,7 +444,7 @@ async function main() {
     console.log(`  - ${mdPath}`)
     console.log(`[prep] done (no changes applied)`)
   } finally {
-    await Promise.all([test.end().catch(() => {}), prod.end().catch(() => {})])
+    await Promise.all([test.end().catch(() => { }), prod.end().catch(() => { })])
   }
 }
 

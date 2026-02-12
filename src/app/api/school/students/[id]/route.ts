@@ -17,6 +17,7 @@ async function getOperatorFromRequest(request: NextRequest) {
   }
 
   try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const decoded = jwt.verify(accessToken, jwtSecret) as any
     const { data: account, error } = await supabaseAdmin
       .from('operator_accounts')
@@ -33,12 +34,15 @@ async function getOperatorFromRequest(request: NextRequest) {
     }
 
     // 관리자 acting 허용
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if ((account as any).role === 'admin') {
       const actingSchoolId = request.cookies.get('acting_school_id')?.value || null
       if (!actingSchoolId) return { error: '관리자 acting 컨텍스트가 설정되지 않았습니다.', status: 403 as const }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return { account: { ...account, school_id: actingSchoolId } as any }
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if ((account as any).role === 'school') {
       if (!account.school_id) return { error: '학교 정보가 누락되었습니다.', status: 400 as const }
       return { account }
@@ -68,6 +72,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   // 학교 범위 보호: school_id 강제
   const { data, error } = await (supabaseAdmin
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .from('students') as any)
     .update({
       ...updatePayload,
@@ -80,7 +85,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     .single()
 
   if (error) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const message = (error as any)?.message || ''
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const code = (error as any)?.code || ''
     if (code === '23505' || message.includes('duplicate key value violates unique constraint')) {
       return NextResponse.json({ error: '해당 번호에 존재하는 학생데이터가 있습니다.' }, { status: 409 })

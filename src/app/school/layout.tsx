@@ -131,7 +131,7 @@ export default function SchoolLayout({ children }: { children: React.ReactNode }
                     if (!name || name === '-' || name === ' - ') return null
 
                     const isExercises = name.includes('운동기록관리') || name.includes('헬스케어') || name.includes('HealthCare')
-                    const isPaps = name.includes('PAPS기록관리')
+                    const isPaps = name.includes('PAPS기록관리') || name.includes('PAPS Care')
                     const isHeartRate = name.includes('심박기록관리') || name.includes('하트케어') || name.includes('심박계') || name.includes('HeartCare')
                     const expired = isExpiredContent(c)
 

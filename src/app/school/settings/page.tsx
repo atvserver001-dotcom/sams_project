@@ -796,7 +796,7 @@ export default function SchoolSettingsPage() {
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || '저장 실패')
 
-      alert('하트 케어 ID 매핑이 저장되었습니다.')
+      alert('Heart Care ID 매핑이 저장되었습니다.')
       setHeartRateMappingModalOpen(false)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
@@ -910,7 +910,7 @@ export default function SchoolSettingsPage() {
                                 type="button"
                                 onClick={async () => {
                                   // "심박기록관리" 또는 "하트 케어" 콘텐츠인 경우 하트 케어 ID 매핑 모달 표시
-                                  if (d.content_name === '심박기록관리' || d.content_name === '하트 케어' || d.content_name === '하트케어') {
+                                  if (d.content_name === '심박기록관리' || d.content_name === '하트 케어' || d.content_name === '하트케어' || d.content_name === 'Heart Care' || d.content_name === 'HeartCare') {
                                     await openHeartRateMappingModal(`${d.device_name} #${ord}`)
                                   } else {
                                     // 그 외의 경우 기존 설정 모달 표시
@@ -1585,7 +1585,7 @@ export default function SchoolSettingsPage() {
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col text-gray-900">
             <div className="px-6 py-4 border-b border-gray-200">
               <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold">하트 케어 ID 설정 - {heartRateMappingLabel}</h3>
+                <h3 className="text-lg font-semibold">Heart Care ID 설정 - {heartRateMappingLabel}</h3>
                 <button
                   type="button"
                   onClick={() => {
@@ -1597,7 +1597,7 @@ export default function SchoolSettingsPage() {
                   <XMarkIcon className="h-5 w-5" />
                 </button>
               </div>
-              <p className="text-xs text-gray-500 mt-1">1~30번 학생의 하트 케어 디바이스 ID를 입력하세요.</p>
+              <p className="text-xs text-gray-500 mt-1">1~30번 학생의 Heart Care 디바이스 ID를 입력하세요.</p>
             </div>
 
             <div className="flex-1 overflow-y-auto px-6 py-4">

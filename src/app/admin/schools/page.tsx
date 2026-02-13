@@ -348,7 +348,7 @@ export default function SchoolsPage() {
   const toggleContent = (content: ContentMaster, checked: boolean) => {
     if (checked) {
       const initialQuantities: { [id: string]: number } = {}
-      content.devices.forEach(d => initialQuantities[d.id] = 1)
+      content.devices.forEach(d => initialQuantities[d.id] = 0)
 
       setContentAssignments(prev => [...prev, {
         content_id: content.id,

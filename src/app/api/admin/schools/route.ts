@@ -27,13 +27,13 @@ export async function GET(req: NextRequest) {
 
   const schools = schoolsRaw ?? []
   const schoolIds = schools.map((s) => s.id)
-  
+
   // 2. 각 학교별 할당된 컨텐츠 및 디바이스 집계
   type SchoolContentWithRelations = TableRow<'school_contents'> & {
     content: { name: string | null; color_hex: string | null } | null
     school_devices: Array<
       TableRow<'school_devices'> & {
-        device: { device_name: string | null } | null
+        device: { device_name: string | null; linkable?: boolean } | null
       }
     > | null
   }
@@ -54,7 +54,9 @@ export async function GET(req: NextRequest) {
         created_at,
         auth_key,
         memo,
-        device:device_id(device_name)
+        link_group_id,
+        is_primary,
+        device:device_id(device_name, linkable)
       )
     `)
     .in('school_id', schoolIds)
@@ -82,12 +84,23 @@ export async function GET(req: NextRequest) {
           auth_key: sd.auth_key,
           created_at: sd.created_at,
           memo: sd.memo ?? '',
+          linkable: sd.device?.linkable ?? false,
+          link_group_id: sd.link_group_id || null, // link_group_id 추가
         }))
       }))
 
+    // 연동 가능 디바이스가 속한 컨텐츠의 종류가 2가지 이상일 때만 true
+    const linkableContentIds = contents
+      .filter(c => c.devices.some(d => d.linkable))
+      .map(c => c.content_id)
+
+    const uniqueLinkableContentCount = new Set(linkableContentIds).size
+    const has_linkable = uniqueLinkableContentCount >= 2
+
     return {
       ...school,
-      contents
+      contents,
+      has_linkable,
     }
   })
 
@@ -101,9 +114,9 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json()
   const { group_no, name, school_type, content_assignments } = body as {
-    group_no: string; 
-    name: string; 
-    school_type: number; 
+    group_no: string;
+    name: string;
+    school_type: number;
     content_assignments?: Array<{
       content_id: string;
       start_date?: string | null;

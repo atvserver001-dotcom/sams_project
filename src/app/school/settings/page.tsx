@@ -14,6 +14,8 @@ type SchoolDeviceInstance = {
   created_at: string | null
   content_name: string | null
   content_color_hex?: string | null
+  link_group_id?: string | null
+  is_primary?: boolean
 }
 
 type AssetItem = {
@@ -197,21 +199,9 @@ export default function SchoolSettingsPage() {
 
   // DB 연동으로 이미지는 signed URL 기반(브라우저 object URL 미사용)
 
-  const rows = useMemo(() => devices, [devices])
-  const grouped = useMemo(() => {
-    const map = new Map<string, { content_name: string; color_hex: string | null; items: SchoolDeviceInstance[] }>()
-    for (const d of rows) {
-      const contentName = d.content_name ? String(d.content_name) : '미분류'
-      const key = contentName
-      const existing = map.get(key)
-      if (existing) {
-        existing.items.push(d)
-      } else {
-        map.set(key, { content_name: contentName, color_hex: d.content_color_hex ?? null, items: [d] })
-      }
-    }
-    return Array.from(map.values())
-  }, [rows])
+  const rows = useMemo(() => {
+    return devices.filter(d => !d.link_group_id || d.is_primary)
+  }, [devices])
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const resolveHex = (hex: any) => {
@@ -818,119 +808,98 @@ export default function SchoolSettingsPage() {
         ) : rows.length === 0 ? (
           <div className="px-4 py-6 text-center text-gray-500">배정된 디바이스가 없습니다.</div>
         ) : (
-          <div className="p-4 space-y-6">
-            {grouped.map(({ content_name, color_hex, items }) => (
-              <div key={content_name} className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-end gap-2">
-                    <div className="inline-flex items-center gap-2">
-                      <span
-                        className="inline-flex items-center rounded-full border px-3 py-1 text-sm font-extrabold text-gray-900 shadow-sm"
-                        style={{
-                          backgroundColor: resolveHex(color_hex) || undefined,
-                          borderColor: resolveHex(color_hex) ? 'rgba(0,0,0,0.08)' : undefined,
-                        }}
-                      >
-                        {content_name}
-                      </span>
-                      <span className="text-xs text-gray-500">({items.length})</span>
-                    </div>
-                  </div>
-                </div>
+          <div className="p-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {(() => {
+                // 전체 목록에 대해 정렬: 디바이스명 -> created_at -> id
+                const sortedItems = [...rows].sort((a, b) => {
+                  const nn = (a.device_name || '').localeCompare(b.device_name || '')
+                  if (nn !== 0) return nn
+                  const ad = a.created_at || ''
+                  const bd = b.created_at || ''
+                  if (ad !== bd) return ad.localeCompare(bd)
+                  return String(a.id || '').localeCompare(String(b.id || ''))
+                })
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {(() => {
-                    // 관리자 화면 표시와 최대한 맞추기: 디바이스명 -> created_at -> id
-                    const sortedItems = [...items].sort((a, b) => {
-                      const nn = (a.device_name || '').localeCompare(b.device_name || '')
-                      if (nn !== 0) return nn
-                      const ad = a.created_at || ''
-                      const bd = b.created_at || ''
-                      if (ad !== bd) return ad.localeCompare(bd)
-                      return String(a.id || '').localeCompare(String(b.id || ''))
-                    })
+                const counter = new Map<string, number>()
 
-                    const counter = new Map<string, number>()
+                return sortedItems.map((d) => {
+                  const ord = (counter.get(d.device_name) || 0) + 1
+                  counter.set(d.device_name, ord)
 
-                    return sortedItems.map((d) => {
-                      const ord = (counter.get(d.device_name) || 0) + 1
-                      counter.set(d.device_name, ord)
+                  const contentHex = resolveHex(d.content_color_hex)
+                  const cardBg = contentHex || undefined
+                  const cardBorder = contentHex ? 'rgba(0,0,0,0.08)' : undefined
 
-                      const contentHex = resolveHex(d.content_color_hex)
-                      const cardBg = contentHex || undefined
-                      const cardBorder = contentHex ? 'rgba(0,0,0,0.08)' : undefined
-
-                      return (
-                        <div
-                          key={d.id}
-                          className="rounded-2xl border border-gray-200 bg-white p-5 text-gray-900 shadow-sm hover:shadow-md transition-shadow"
-                          style={{
-                            backgroundColor: cardBg,
-                            borderColor: cardBorder,
-                          }}
-                        >
-                          <div className="flex items-start justify-between gap-4">
+                  return (
+                    <div
+                      key={d.id}
+                      className="rounded-2xl border border-gray-200 bg-white p-5 text-gray-900 shadow-sm hover:shadow-md transition-shadow"
+                      style={{
+                        backgroundColor: cardBg,
+                        borderColor: cardBorder,
+                      }}
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            {d.device_icon_url ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={d.device_icon_url}
+                                alt={`${d.device_name} 아이콘`}
+                                className="h-9 w-9 rounded-xl object-cover border border-gray-200"
+                              />
+                            ) : (
+                              <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-slate-900 to-slate-700 shadow-sm" />
+                            )}
                             <div className="min-w-0">
-                              <div className="flex items-center gap-2">
-                                {d.device_icon_url ? (
-                                  // eslint-disable-next-line @next/next/no-img-element
-                                  <img
-                                    src={d.device_icon_url}
-                                    alt={`${d.device_name} 아이콘`}
-                                    className="h-9 w-9 rounded-xl object-cover border border-gray-200"
-                                  />
-                                ) : (
-                                  <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-slate-900 to-slate-700 shadow-sm" />
-                                )}
-                                <div className="min-w-0">
-                                  <div className="text-sm font-semibold truncate">
-                                    {d.device_name} <span className="text-gray-600 font-semibold">#{ord}</span>
-                                  </div>
-                                  <div className="mt-0.5 flex items-center gap-2">
-                                    {d.memo ? (
-                                      <div className="text-xs text-gray-600 truncate" title={d.memo}>
-                                        {d.memo}
-                                      </div>
-                                    ) : (
-                                      <div className="text-xs text-gray-500">메모 없음</div>
-                                    )}
-                                    <button
-                                      type="button"
-                                      onClick={() => openMemoModal(d.id, `${d.device_name} #${ord}`, d.memo)}
-                                      className="px-2 py-0.5 rounded border border-gray-300 bg-white/80 text-gray-700 hover:bg-white text-[11px] shadow-sm"
-                                    >
-                                      메모
-                                    </button>
-                                  </div>
-                                </div>
+                              <div className="text-sm font-semibold truncate">
+                                {d.device_name} <span className="text-gray-600 font-semibold">#{ord}</span>
                               </div>
-                            </div>
-                            <div className="flex shrink-0 items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={async () => {
-                                  // "심박기록관리" 또는 "하트 케어" 콘텐츠인 경우 하트 케어 ID 매핑 모달 표시
-                                  if (d.content_name === '심박기록관리' || d.content_name === '하트 케어' || d.content_name === '하트케어' || d.content_name === 'Heart Care' || d.content_name === 'HeartCare') {
-                                    await openHeartRateMappingModal(`${d.device_name} #${ord}`)
-                                  } else {
-                                    // 그 외의 경우 기존 설정 모달 표시
-                                    ensurePages(d.id)
-                                    await openSettingsModal(d.id, `${d.device_name} #${ord}`)
-                                  }
-                                }}
-                                className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium shadow-sm"
-                              >
-                                설정
-                              </button>
+                              <div className="mt-0.5 flex items-center gap-2">
+                                {d.memo ? (
+                                  <div className="text-xs text-gray-600 truncate" title={d.memo}>
+                                    {d.memo}
+                                  </div>
+                                ) : (
+                                  <div className="text-xs text-gray-500">메모 없음</div>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => openMemoModal(d.id, `${d.device_name} #${ord}`, d.memo)}
+                                  className="px-2 py-0.5 rounded border border-gray-300 bg-white/80 text-gray-700 hover:bg-white text-[11px] shadow-sm"
+                                >
+                                  메모
+                                </button>
+                              </div>
                             </div>
                           </div>
                         </div>
-                      )
-                    })
-                  })()}
-                </div>
-              </div>
-            ))}
+                        <div className="flex shrink-0 items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              // "심박기록관리" 또는 "하트 케어" 콘텐츠인 경우 하트 케어 ID 매핑 모달 표시
+                              if (d.content_name === '심박기록관리' || d.content_name === '하트 케어' || d.content_name === '하트케어' || d.content_name === 'Heart Care' || d.content_name === 'HeartCare') {
+                                await openHeartRateMappingModal(`${d.device_name} #${ord}`)
+                              } else {
+                                // 그 외의 경우 기존 설정 모달 표시
+                                ensurePages(d.id)
+                                await openSettingsModal(d.id, `${d.device_name} #${ord}`)
+                              }
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium shadow-sm"
+                          >
+                            설정
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })
+              })()}
+            </div>
           </div>
         )}
       </div>

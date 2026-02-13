@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 
-interface DeviceRow { id: string; device_name: string; sort_order?: number | null; icon_url?: string | null; icon_path?: string | null }
+interface DeviceRow { id: string; device_name: string; sort_order?: number | null; icon_url?: string | null; icon_path?: string | null; linkable?: boolean }
 interface ContentRow { id: string; name: string; description?: string; color_hex?: string; devices: { id: string; name: string }[] }
 
 export default function AdminDevicesPage() {
@@ -22,6 +22,7 @@ export default function AdminDevicesPage() {
   const [deviceName, setDeviceName] = useState('')
   const [deviceIconFile, setDeviceIconFile] = useState<File | null>(null)
   const [deviceIconPreview, setDeviceIconPreview] = useState<string>('')
+  const [deviceLinkable, setDeviceLinkable] = useState(false)
 
   const [contentName, setContentName] = useState('')
   const [contentDesc, setContentDesc] = useState('')
@@ -64,6 +65,7 @@ export default function AdminDevicesPage() {
     setDeviceName('')
     setDeviceIconFile(null)
     setDeviceIconPreview('')
+    setDeviceLinkable(false)
     setFormError('')
     setIsDeviceModalOpen(true)
   }
@@ -73,6 +75,7 @@ export default function AdminDevicesPage() {
     setDeviceName(row.device_name)
     setDeviceIconFile(null)
     setDeviceIconPreview(row.icon_url || '')
+    setDeviceLinkable(!!row.linkable)
     setFormError('')
     setIsDeviceModalOpen(true)
   }
@@ -103,7 +106,7 @@ export default function AdminDevicesPage() {
         method: editingId ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ device_name: name }),
+        body: JSON.stringify({ device_name: name, linkable: deviceLinkable }),
       })
       if (!res.ok) {
         const data = await res.json()
@@ -320,14 +323,15 @@ export default function AdminDevicesPage() {
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">순서</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">디바이스 이름</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">연동</th>
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {loading ? (
-                <tr><td colSpan={3} className="px-4 py-6 text-center text-gray-500">불러오는 중...</td></tr>
+                <tr><td colSpan={4} className="px-4 py-6 text-center text-gray-500">불러오는 중...</td></tr>
               ) : devices.length === 0 ? (
-                <tr><td colSpan={3} className="px-4 py-6 text-center text-gray-500">데이터가 없습니다.</td></tr>
+                <tr><td colSpan={4} className="px-4 py-6 text-center text-gray-500">데이터가 없습니다.</td></tr>
               ) : (
                 devices.map((row, idx) => (
                   <tr key={row.id}>
@@ -346,6 +350,13 @@ export default function AdminDevicesPage() {
                         )}
                         <span>{row.device_name}</span>
                       </div>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                      {row.linkable ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">가능</span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">-</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap text-right text-sm">
                       <div className="inline-flex items-center gap-2">
@@ -414,6 +425,18 @@ export default function AdminDevicesPage() {
                   )}
                 </div>
                 <p className="mt-2 text-xs text-gray-500">권장: 정사각형 PNG/JPG (예: 256×256)</p>
+              </div>
+              <div>
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-gray-300"
+                    checked={deviceLinkable}
+                    onChange={(e) => setDeviceLinkable(e.target.checked)}
+                  />
+                  연동 가능
+                </label>
+                <p className="mt-1 text-xs text-gray-500">이 디바이스를 다른 디바이스와 연동할 수 있게 합니다.</p>
               </div>
               <div className="flex justify-end gap-2 pt-2">
                 <button type="button" onClick={() => setIsDeviceModalOpen(false)} className="px-4 py-2 rounded bg-gray-400 hover:bg-gray-500">취소</button>

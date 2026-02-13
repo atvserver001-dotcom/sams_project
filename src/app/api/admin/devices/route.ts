@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await supabaseAdmin
     .from('devices')
-    .select('id, device_name, sort_order, icon_path')
+    .select('id, device_name, sort_order, icon_path, linkable')
     .order('sort_order', { ascending: true, nullsFirst: true })
     .order('device_name', { ascending: true })
     .returns<TableRow<'devices'>[]>()
@@ -38,17 +38,17 @@ export async function POST(req: NextRequest) {
   if ('error' in auth) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
   const body = await req.json()
-  const { device_name } = body as { device_name?: string }
+  const { device_name, linkable } = body as { device_name?: string; linkable?: boolean }
   if (!device_name || !device_name.trim()) {
     return NextResponse.json({ error: 'device_name은 필수입니다.' }, { status: 400 })
   }
 
-  const payload: TableInsert<'devices'> = { device_name: device_name.trim() }
+  const payload: TableInsert<'devices'> = { device_name: device_name.trim(), linkable: !!linkable }
 
   const { data, error } = await supabaseAdmin
     .from('devices')
     .insert(payload)
-    .select('id, device_name, sort_order, icon_path')
+    .select('id, device_name, sort_order, icon_path, linkable')
     .single()
     .returns<TableRow<'devices'>>()
 

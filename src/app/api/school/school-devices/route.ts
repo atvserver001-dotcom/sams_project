@@ -80,6 +80,8 @@ export async function GET(request: NextRequest) {
       memo,
       status,
       created_at,
+      link_group_id,
+      is_primary,
       device:device_id(device_name, icon_path),
       school_content:school_content_id(
         content:content_id(name, color_hex)
@@ -109,6 +111,8 @@ export async function GET(request: NextRequest) {
       created_at: row.created_at ?? null,
       content_name: row.school_content?.content?.name || null,
       content_color_hex: row.school_content?.content?.color_hex || null,
+      link_group_id: row.link_group_id || null,
+      is_primary: !!row.is_primary,
     }
   }))
 

@@ -10,6 +10,7 @@ interface SchoolDeviceItem {
   auth_key: string
   created_at?: string
   memo?: string
+  link_group_id?: string | null
 }
 interface SchoolContentItem {
   id: string
@@ -28,6 +29,7 @@ interface SchoolListItem {
   school_type: 1 | 2 | 3
   recognition_key?: string
   contents: SchoolContentItem[]
+  has_linkable?: boolean
 }
 
 interface ContentMaster {
@@ -74,6 +76,16 @@ export default function SchoolsPage() {
 
   const [contentMaster, setContentMaster] = useState<ContentMaster[]>([])
   const [modalLoading, setModalLoading] = useState(false)
+
+  // 연동 모달 state
+  const [linkModalOpen, setLinkModalOpen] = useState(false)
+  const [linkSchool, setLinkSchool] = useState<SchoolListItem | null>(null)
+  const [linkLoading, setLinkLoading] = useState(false)
+  const [linkGroups, setLinkGroups] = useState<any[]>([])
+  const [linkAvailable, setLinkAvailable] = useState<any[]>([])
+  const [linkPrimary, setLinkPrimary] = useState<string>('')
+  const [linkSecondaries, setLinkSecondaries] = useState<string[]>([])
+  const [linkSaving, setLinkSaving] = useState(false)
 
   const fetchContents = async () => {
     try {
@@ -139,6 +151,75 @@ export default function SchoolsPage() {
     } finally {
       setMemoSaving(false)
     }
+  }
+
+  // ===== 연동 모달 함수 =====
+  const handleOpenLinkModal = async (school: SchoolListItem) => {
+    setLinkSchool(school)
+    setLinkModalOpen(true)
+    setLinkLoading(true)
+    setLinkPrimary('')
+    setLinkSecondaries([])
+    try {
+      const res = await fetch(`/api/admin/school-linking?school_id=${school.id}`, {
+        credentials: 'include',
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || '연동 정보 조회 실패')
+      setLinkGroups(data.groups || [])
+      setLinkAvailable(data.linkable_devices || [])
+    } catch (e: unknown) {
+      alert((e as Error).message || '연동 정보 조회 실패')
+    } finally {
+      setLinkLoading(false)
+    }
+  }
+
+  const handleCreateLinkGroup = async () => {
+    if (!linkPrimary) { alert('주 디바이스를 선택해주세요.'); return }
+    if (linkSecondaries.length === 0) { alert('부 디바이스를 1개 이상 선택해주세요.'); return }
+    setLinkSaving(true)
+    try {
+      const res = await fetch('/api/admin/school-linking', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          primary_device_id: linkPrimary,
+          secondary_device_ids: linkSecondaries,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || '연동 그룹 생성 실패')
+      // 새로고침
+      if (linkSchool) handleOpenLinkModal(linkSchool)
+    } catch (e: unknown) {
+      alert((e as Error).message || '연동 그룹 생성 실패')
+    } finally {
+      setLinkSaving(false)
+    }
+  }
+
+  const handleDeleteLinkGroup = async (groupId: string) => {
+    if (!confirm('이 연동 그룹을 삭제하시겠습니까?')) return
+    try {
+      const res = await fetch(`/api/admin/school-linking?group_id=${groupId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || '연동 그룹 삭제 실패')
+      // 새로고침
+      if (linkSchool) handleOpenLinkModal(linkSchool)
+    } catch (e: unknown) {
+      alert((e as Error).message || '연동 그룹 삭제 실패')
+    }
+  }
+
+  const toggleSecondary = (id: string) => {
+    setLinkSecondaries((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    )
   }
 
   useEffect(() => {
@@ -342,6 +423,13 @@ export default function SchoolsPage() {
         <div key={`${d.device_name}-${d.auth_key}-${i}`} className="text-xs flex gap-2 items-center whitespace-nowrap">
           <span className="text-gray-600 w-28 truncate">{d.device_name} #{n}:</span>
           <code className="bg-gray-100 px-1 rounded text-red-600 font-mono">{d.auth_key}</code>
+          <div className="w-10 flex-shrink-0 flex items-center justify-center">
+            {d.link_group_id && (
+              <span className="px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold border border-emerald-200">
+                연동
+              </span>
+            )}
+          </div>
           <button
             type="button"
             onClick={() => openMemoModal(String(d.id), `${d.device_name} #${n}`, d.memo)}
@@ -350,7 +438,7 @@ export default function SchoolsPage() {
             메모
           </button>
           {d.memo && (
-            <span className="ml-2 text-[11px] text-gray-500 truncate max-w-[160px]" title={d.memo}>
+            <span className="ml-2 text-[11px] text-gray-500 truncate max-w-[300px]" title={d.memo}>
               {d.memo}
             </span>
           )}
@@ -463,6 +551,9 @@ export default function SchoolsPage() {
                   <td className="px-4 py-3 whitespace-nowrap text-right text-sm align-top">
                     <div className="flex flex-col gap-2">
                       <button onClick={() => handleOpenEdit(row)} className="px-3 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded">수정</button>
+                      {row.has_linkable && (
+                        <button onClick={() => handleOpenLinkModal(row)} className="px-3 py-1 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded">연동</button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -521,6 +612,233 @@ export default function SchoolsPage() {
           </div>
         </div>
       )}
+
+      {/* 연동 모달 */}
+      {linkModalOpen && linkSchool && (() => {
+        // 컨텐츠별로 그룹핑 헬퍼
+        const groupByContent = (devices: any[]) => {
+          const map = new Map<string, { content_name: string; content_color_hex: string | null; items: any[] }>()
+          devices.forEach((d: any) => {
+            const key = d.content_name || '기타'
+            if (!map.has(key)) map.set(key, { content_name: key, content_color_hex: d.content_color_hex, items: [] })
+            map.get(key)!.items.push(d)
+          })
+          return Array.from(map.values())
+        }
+        const availableByContent = groupByContent(linkAvailable)
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+              {/* 헤더 */}
+              <div className="flex items-center justify-between px-6 py-4 border-b bg-gradient-to-r from-purple-50 to-indigo-50">
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900">디바이스 연동 관리</h2>
+                  <p className="text-xs text-gray-500 mt-0.5">{linkSchool.name}</p>
+                </div>
+                <button onClick={() => { setLinkModalOpen(false); setLinkSchool(null); fetchList() }} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-500 hover:text-gray-700 transition-colors text-lg">&times;</button>
+              </div>
+
+              <div className="overflow-y-auto flex-1 px-6 py-5">
+                {linkLoading ? (
+                  <div className="py-16 text-center text-gray-400">불러오는 중...</div>
+                ) : (
+                  <div className="space-y-8">
+
+                    {/* ── 섹션 1: 기존 연동 그룹 ── */}
+                    <section>
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-1 h-5 rounded-full bg-indigo-500"></div>
+                        <h3 className="text-sm font-bold text-gray-800">기존 연동 그룹</h3>
+                        <span className="text-xs text-gray-400 ml-1">{linkGroups.length}개</span>
+                      </div>
+
+                      {linkGroups.length === 0 ? (
+                        <div className="rounded-lg border-2 border-dashed border-gray-200 p-6 text-center">
+                          <p className="text-sm text-gray-400">아직 연동 그룹이 없습니다.</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {linkGroups.map((g: any) => (
+                            <div key={g.group_id} className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+                              <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border-b border-gray-100">
+                                <span className="text-xs text-gray-400 font-mono">그룹 {g.group_id.slice(0, 8)}</span>
+                                <button
+                                  onClick={() => handleDeleteLinkGroup(g.group_id)}
+                                  className="text-xs px-3 py-1 rounded-md bg-red-50 hover:bg-red-100 text-red-500 hover:text-red-600 transition-colors border border-red-100"
+                                >삭제</button>
+                              </div>
+                              <div className="p-4 space-y-2">
+                                {/* 주 디바이스 */}
+                                {g.primary && (
+                                  <div className="flex items-center gap-3 p-2.5 rounded-lg bg-indigo-50 border border-indigo-100">
+                                    <span className="shrink-0 w-6 h-6 rounded-full bg-indigo-500 text-white text-xs font-bold flex items-center justify-center">주</span>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="text-sm font-semibold text-gray-900">{g.primary.device_name}</div>
+                                      <div className="flex items-center gap-2 mt-0.5">
+                                        <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium text-white" style={{ backgroundColor: g.primary.content_color_hex || '#6B7280' }}>{g.primary.content_name}</span>
+                                        <span className="text-xs font-mono text-gray-400 tracking-wider">{g.primary.auth_key}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                                {/* 연결선 */}
+                                {g.secondaries.length > 0 && (
+                                  <div className="flex items-center gap-2 pl-6">
+                                    <div className="w-px h-3 bg-gray-300"></div>
+                                    <span className="text-[10px] text-gray-400">연동됨</span>
+                                    <div className="flex-1 h-px bg-gray-200"></div>
+                                  </div>
+                                )}
+                                {/* 부 디바이스들 */}
+                                {g.secondaries.map((s: any) => (
+                                  <div key={s.id} className="flex items-center gap-3 p-2.5 rounded-lg bg-gray-50 border border-gray-100 ml-6">
+                                    <span className="shrink-0 w-6 h-6 rounded-full bg-gray-400 text-white text-xs font-bold flex items-center justify-center">부</span>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="text-sm font-semibold text-gray-900">{s.device_name}</div>
+                                      <div className="flex items-center gap-2 mt-0.5">
+                                        <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium text-white" style={{ backgroundColor: s.content_color_hex || '#6B7280' }}>{s.content_name}</span>
+                                        <span className="text-xs font-mono text-gray-400 tracking-wider">{s.auth_key}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </section>
+
+                    {/* ── 섹션 2: 새 연동 그룹 생성 ── */}
+                    {linkAvailable.length >= 2 ? (
+                      <section>
+                        <div className="flex items-center gap-2 mb-3">
+                          <div className="w-1 h-5 rounded-full bg-purple-500"></div>
+                          <h3 className="text-sm font-bold text-gray-800">새 연동 그룹 생성</h3>
+                        </div>
+                        <p className="text-xs text-gray-400 mb-4">주 디바이스 1개와 부 디바이스를 선택하여 연동 그룹을 만드세요.</p>
+
+                        {/* 컨텐츠별 그룹 */}
+                        <div className="space-y-4">
+                          {availableByContent.map((group) => (
+                            <div key={group.content_name} className="rounded-xl border border-gray-200 overflow-hidden">
+                              {/* 컨텐츠 헤더 */}
+                              <div className="flex items-center gap-2 px-4 py-2.5 border-b" style={{ backgroundColor: (group.content_color_hex || '#E5E7EB') + '20' }}>
+                                <span
+                                  className="inline-block px-2 py-0.5 rounded text-xs font-bold text-white shadow-sm"
+                                  style={{ backgroundColor: group.content_color_hex || '#6B7280' }}
+                                >{group.content_name}</span>
+                                <span className="text-xs text-gray-400">{group.items.length}개 디바이스</span>
+                              </div>
+
+                              {/* 디바이스 목록 */}
+                              <div className="divide-y divide-gray-50">
+                                {group.items.map((d: any) => {
+                                  const isPrimary = linkPrimary === d.id
+                                  const isSecondary = linkSecondaries.includes(d.id)
+                                  const isSelected = isPrimary || isSecondary
+
+                                  return (
+                                    <div
+                                      key={d.id}
+                                      className={`flex items-center gap-3 px-4 py-3 transition-colors ${isPrimary ? 'bg-indigo-50' : isSecondary ? 'bg-purple-50' : 'hover:bg-gray-50'
+                                        }`}
+                                    >
+                                      {/* 역할 선택 버튼 */}
+                                      <div className="flex items-center gap-1.5 shrink-0">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            if (isPrimary) {
+                                              setLinkPrimary('')
+                                            } else {
+                                              setLinkPrimary(d.id)
+                                              setLinkSecondaries((prev) => prev.filter((x) => x !== d.id))
+                                            }
+                                          }}
+                                          className={`w-7 h-7 rounded-full text-xs font-bold flex items-center justify-center border-2 transition-all ${isPrimary
+                                            ? 'bg-indigo-500 text-white border-indigo-500 shadow-md shadow-indigo-200'
+                                            : 'bg-white text-gray-400 border-gray-300 hover:border-indigo-400 hover:text-indigo-400'
+                                            }`}
+                                          title="주 디바이스로 지정"
+                                        >주</button>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            if (isPrimary) return // 주 선택 시 부 불가
+                                            toggleSecondary(d.id)
+                                          }}
+                                          className={`w-7 h-7 rounded-full text-xs font-bold flex items-center justify-center border-2 transition-all ${isSecondary
+                                            ? 'bg-purple-500 text-white border-purple-500 shadow-md shadow-purple-200'
+                                            : isPrimary
+                                              ? 'bg-gray-100 text-gray-300 border-gray-200 cursor-not-allowed'
+                                              : 'bg-white text-gray-400 border-gray-300 hover:border-purple-400 hover:text-purple-400'
+                                            }`}
+                                          title="부 디바이스로 지정"
+                                          disabled={isPrimary}
+                                        >부</button>
+                                      </div>
+
+                                      {/* 디바이스 정보 */}
+                                      <div className="flex-1 min-w-0">
+                                        <div className="text-sm font-medium text-gray-900">{d.device_name}</div>
+                                        <div className="text-xs font-mono text-gray-400 mt-0.5 tracking-wider">{d.auth_key}</div>
+                                      </div>
+
+                                      {/* 선택 상태 뱃지 */}
+                                      {isSelected && (
+                                        <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full ${isPrimary ? 'bg-indigo-100 text-indigo-700' : 'bg-purple-100 text-purple-700'
+                                          }`}>
+                                          {isPrimary ? '주 디바이스' : '부 디바이스'}
+                                        </span>
+                                      )}
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* 선택 요약 & 생성 버튼 */}
+                        <div className="mt-5 flex items-center justify-between p-4 rounded-xl bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-100">
+                          <div className="text-xs text-gray-600">
+                            {linkPrimary ? (
+                              <span>주: <strong className="text-indigo-700">{linkAvailable.find((d: any) => d.id === linkPrimary)?.device_name}</strong></span>
+                            ) : (
+                              <span className="text-gray-400">주 디바이스를 선택하세요</span>
+                            )}
+                            {linkSecondaries.length > 0 && (
+                              <span className="ml-3">부: <strong className="text-purple-700">{linkSecondaries.length}개</strong> 선택됨</span>
+                            )}
+                          </div>
+                          <button
+                            onClick={handleCreateLinkGroup}
+                            disabled={linkSaving || !linkPrimary || linkSecondaries.length === 0}
+                            className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-sm"
+                          >
+                            {linkSaving ? '생성 중...' : '연동 그룹 생성'}
+                          </button>
+                        </div>
+                      </section>
+                    ) : linkAvailable.length > 0 ? (
+                      <div className="rounded-lg border-2 border-dashed border-gray-200 p-6 text-center">
+                        <p className="text-sm text-gray-400">미연동 디바이스가 2개 이상이어야 새 그룹을 만들 수 있습니다.</p>
+                      </div>
+                    ) : linkGroups.length === 0 ? (
+                      <div className="rounded-lg border-2 border-dashed border-gray-200 p-6 text-center">
+                        <p className="text-sm text-gray-400">연동 가능한 디바이스가 없습니다.</p>
+                      </div>
+                    ) : null}
+
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">

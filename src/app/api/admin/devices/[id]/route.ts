@@ -14,18 +14,21 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const { id } = await params
   const body = await req.json()
-  const { device_name } = body as { device_name?: string }
+  const { device_name, linkable } = body as { device_name?: string; linkable?: boolean }
   const updatePayload: TableUpdate<'devices'> = {}
   if (device_name !== undefined) {
     if (!device_name.trim()) return NextResponse.json({ error: 'device_name은 비울 수 없습니다.' }, { status: 400 })
     updatePayload.device_name = device_name.trim()
+  }
+  if (linkable !== undefined) {
+    updatePayload.linkable = !!linkable
   }
 
   const { data, error } = await supabaseAdmin
     .from('devices')
     .update(updatePayload)
     .eq('id', id)
-    .select('id, device_name, sort_order, icon_path')
+    .select('id, device_name, sort_order, icon_path, linkable')
     .single()
     .returns<TableRow<'devices'>>()
 

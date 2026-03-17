@@ -21,16 +21,19 @@ type StudentRow = {
   name: string
 }
 
-type PapsRoundRow = {
+type PapsMonthRow = {
   student_id: string
   year: number
-  round_no: number
+  month: number
   muscular_endurance: number | null
-  power: number | null
-  flexibility: number | null
-  cardio_endurance: number | null
+  power_1: number | null
+  power_2: number | null
+  flexibility_1: number | null
+  flexibility_2: number | null
+  cardio_1min: number | null
+  cardio_2min: number | null
+  cardio_3min: number | null
   bmi: number | null
-  measured_at: string | null
 }
 
 async function getOperatorFromRequest(request: NextRequest): Promise<AuthResult> {
@@ -84,11 +87,14 @@ type PapsRow = {
   student_no: number
   name: string
   muscular_endurance: (number | null)[]
-  power: (number | null)[]
-  flexibility: (number | null)[]
-  cardio_endurance: (number | null)[]
+  power_1: (number | null)[]
+  power_2: (number | null)[]
+  flexibility_1: (number | null)[]
+  flexibility_2: (number | null)[]
+  cardio_1min: (number | null)[]
+  cardio_2min: (number | null)[]
+  cardio_3min: (number | null)[]
   bmi: (number | null)[]
-  measured_at: (string | null)[]
 }
 
 export async function GET(request: NextRequest) {
@@ -134,15 +140,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ rows: [] })
   }
 
-  // 회차 기반 조회 (1~12회차)
+  // 학년도 조회: 당해 3~12월 OR 익년 1~2월 (exercises/heart-rate와 동일)
   const { data: records, error: recordsError } = await supabaseAdmin
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .from('paps_records' as any)
-    .select('student_id, year, round_no, muscular_endurance, power, flexibility, cardio_endurance, bmi, measured_at')
+    .select('student_id, year, month, muscular_endurance, power_1, power_2, flexibility_1, flexibility_2, cardio_1min, cardio_2min, cardio_3min, bmi')
     .in('student_id', studentIds)
-    .eq('year', year)
-    .order('round_no', { ascending: true })
-    .returns<PapsRoundRow[]>()
+    .or(`and(year.eq.${year},month.gte.3),and(year.eq.${year + 1},month.lte.2)`)
+    .order('month', { ascending: true })
+    .returns<PapsMonthRow[]>()
 
   if (recordsError) {
     return NextResponse.json({ error: recordsError.message }, { status: 500 })
@@ -155,25 +161,31 @@ export async function GET(request: NextRequest) {
       student_no: s.student_no,
       name: s.name,
       muscular_endurance: Array.from({ length: 12 }, () => null),
-      power: Array.from({ length: 12 }, () => null),
-      flexibility: Array.from({ length: 12 }, () => null),
-      cardio_endurance: Array.from({ length: 12 }, () => null),
+      power_1: Array.from({ length: 12 }, () => null),
+      power_2: Array.from({ length: 12 }, () => null),
+      flexibility_1: Array.from({ length: 12 }, () => null),
+      flexibility_2: Array.from({ length: 12 }, () => null),
+      cardio_1min: Array.from({ length: 12 }, () => null),
+      cardio_2min: Array.from({ length: 12 }, () => null),
+      cardio_3min: Array.from({ length: 12 }, () => null),
       bmi: Array.from({ length: 12 }, () => null),
-      measured_at: Array.from({ length: 12 }, () => null),
     }
   }
 
   for (const r of records ?? []) {
     const row = studentIdToRow[r.student_id]
     if (!row) continue
-    const idx = Math.max(0, Math.min(11, (r.round_no ?? 1) - 1))
+    const idx = Math.max(0, Math.min(11, (r.month ?? 1) - 1))
 
     row.muscular_endurance[idx] = typeof r.muscular_endurance === 'number' ? r.muscular_endurance : null
-    row.power[idx] = typeof r.power === 'number' ? r.power : null
-    row.flexibility[idx] = typeof r.flexibility === 'number' ? r.flexibility : null
-    row.cardio_endurance[idx] = typeof r.cardio_endurance === 'number' ? r.cardio_endurance : null
+    row.power_1[idx] = typeof r.power_1 === 'number' ? r.power_1 : null
+    row.power_2[idx] = typeof r.power_2 === 'number' ? r.power_2 : null
+    row.flexibility_1[idx] = typeof r.flexibility_1 === 'number' ? r.flexibility_1 : null
+    row.flexibility_2[idx] = typeof r.flexibility_2 === 'number' ? r.flexibility_2 : null
+    row.cardio_1min[idx] = typeof r.cardio_1min === 'number' ? r.cardio_1min : null
+    row.cardio_2min[idx] = typeof r.cardio_2min === 'number' ? r.cardio_2min : null
+    row.cardio_3min[idx] = typeof r.cardio_3min === 'number' ? r.cardio_3min : null
     row.bmi[idx] = typeof r.bmi === 'number' ? r.bmi : null
-    row.measured_at[idx] = r.measured_at
   }
 
   const rows: PapsRow[] = Object.values(studentIdToRow).sort((a, b) => (a.student_no ?? 0) - (b.student_no ?? 0))

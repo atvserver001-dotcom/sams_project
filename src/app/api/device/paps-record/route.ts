@@ -45,7 +45,23 @@ function num(v: unknown): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-/** device/ingest 의 ensureStudentExistsForItem 과 동일: 없으면 insert, 유니크 충돌은 정상으로 보고 마지막에 id 조회 */
+function intRow(v: number): number {
+  return Math.trunc(v)
+}
+
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms))
+}
+
+function isDuplicateStudentError(err: unknown): boolean {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const code = (err as any)?.code || ''
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const message = String((err as any)?.message || '')
+  return code === '23505' || message.includes('duplicate key value violates unique constraint')
+}
+
+/** device/ingest 와 동일: 없으면 insert, 유니크 충돌 시 재조회. insert 시 Returning 으로 id 를 바로 받아 분리 조회 실패를 줄임 */
 async function ensureStudentExists(params: {
   recognition_key: string
   calendarYear: number
@@ -55,6 +71,13 @@ async function ensureStudentExists(params: {
   student_no: number
 }) {
   const { recognition_key, calendarYear, month, grade, class_no, student_no } = params
+
+  const yi = intRow(calendarYear)
+  const mi = intRow(month)
+  const gi = intRow(grade)
+  const ci = intRow(class_no)
+  const sni = intRow(student_no)
+
   const { data: school, error: schoolError } = await (supabaseAdmin
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .from('schools') as any)
@@ -67,7 +90,7 @@ async function ensureStudentExists(params: {
   }
 
   // 학년도 계산: 1, 2월 데이터는 전년도 학년도 학생에게 귀속 (ingest 와 동일)
-  const studentYear = month === 1 || month === 2 ? calendarYear - 1 : calendarYear
+  const studentYear = mi === 1 || mi === 2 ? yi - 1 : yi
 
   const selectStudentId = async (): Promise<
     | { ok: true; student_id: string | null }
@@ -79,14 +102,27 @@ async function ensureStudentExists(params: {
       .select('id')
       .eq('school_id', school.id)
       .eq('year', studentYear)
-      .eq('grade', grade)
-      .eq('class_no', class_no)
-      .eq('student_no', student_no)
+      .eq('grade', gi)
+      .eq('class_no', ci)
+      .eq('student_no', sni)
       .maybeSingle()
     if (error) {
       return { ok: false, message: error.message || '학생 조회 중 오류가 발생했습니다.' }
     }
     return { ok: true, student_id: (data?.id as string | undefined) ?? null }
+  }
+
+  const selectStudentIdWithRetry = async (): Promise<
+    | { ok: true; student_id: string }
+    | { ok: false; message: string }
+  > => {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (attempt > 0) await sleep(40 * attempt)
+      const r = await selectStudentId()
+      if (!r.ok) return { ok: false, message: r.message }
+      if (r.student_id) return { ok: true, student_id: r.student_id }
+    }
+    return { ok: false, message: '학생 생성 후 조회에 실패했습니다.' }
   }
 
   const first = await selectStudentId()
@@ -98,35 +134,33 @@ async function ensureStudentExists(params: {
   const payload = {
     school_id: school.id,
     year: studentYear,
-    grade,
-    class_no,
-    student_no,
-    name: `${student_no}번 학생`,
+    grade: gi,
+    class_no: ci,
+    student_no: sni,
+    name: `${sni}번 학생`,
   }
 
-  // insert 만 수행 (ingest 와 동일). select 를 붙이면 중복 시 응답 형태에 따라 id 를 못 받는 경우가 있음
-  const { error: insertError } = await (supabaseAdmin
+  const { data: insertedRow, error: insertError } = await (supabaseAdmin
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .from('students') as any)
     .insert(payload)
+    .select('id')
+    .maybeSingle()
+
+  if (!insertError && insertedRow?.id) {
+    return { ok: true as const, student_id: insertedRow.id as string, school_id: school.id as string }
+  }
 
   if (insertError) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const code = (insertError as any).code || ''
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const message = (insertError as any).message || ''
-    // 유니크 인덱스: 동시 요청·이미 존재 시에도 이후 select 로 id 확보
-    if (!(code === '23505' || message.includes('duplicate key value violates unique constraint'))) {
+    if (!isDuplicateStudentError(insertError)) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const message = String((insertError as any).message || '')
       return { ok: false as const, message: message || '학생 정보 저장 중 오류가 발생했습니다.' }
     }
   }
 
-  const after = await selectStudentId()
+  const after = await selectStudentIdWithRetry()
   if (!after.ok) return { ok: false as const, message: after.message }
-  if (!after.student_id) {
-    return { ok: false as const, message: '학생 생성 후 조회에 실패했습니다.' }
-  }
-
   return { ok: true as const, student_id: after.student_id, school_id: school.id as string }
 }
 

@@ -1,0 +1,176 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1775198373375,
+  "projectRoot": "C:\\Users\\Lim\\Desktop\\mirror-project",
+  "techStack": {
+    "languages": [
+      {
+        "name": "JavaScript/TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "package.json"
+        ]
+      },
+      {
+        "name": "TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "tsconfig.json"
+        ]
+      }
+    ],
+    "frameworks": [
+      {
+        "name": "next",
+        "version": "15.5.9",
+        "category": "fullstack"
+      },
+      {
+        "name": "react",
+        "version": "19.1.0",
+        "category": "frontend"
+      },
+      {
+        "name": "react-dom",
+        "version": "19.1.0",
+        "category": "frontend"
+      }
+    ],
+    "packageManager": "npm",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": "npm run build",
+    "testCommand": null,
+    "lintCommand": "npm run lint",
+    "devCommand": "npm run dev",
+    "scripts": {
+      "dev": "next dev",
+      "build": "next build",
+      "start": "next start",
+      "lint": "eslint",
+      "health:node": "node scripts/supabase-health.js",
+      "supabase:sync-func-trig:dry": "cross-env DRY_RUN=1 node scripts/supabase-sync-functions-triggers.js",
+      "supabase:sync-func-trig": "cross-env DRY_RUN=0 node scripts/supabase-sync-functions-triggers.js",
+      "supabase:prepare-prod-schema-from-test": "node scripts/supabase-prepare-prod-schema-from-test.js"
+    }
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": "type-based"
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "public",
+      "scripts",
+      "src"
+    ],
+    "gitBranches": null
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "public": {
+      "path": "public",
+      "purpose": "Public files",
+      "fileCount": 5,
+      "lastAccessed": 1775198373344,
+      "keyFiles": [
+        "file.svg",
+        "globe.svg",
+        "next.svg",
+        "vercel.svg",
+        "window.svg"
+      ]
+    },
+    "scripts": {
+      "path": "scripts",
+      "purpose": "Build/utility scripts",
+      "fileCount": 13,
+      "lastAccessed": 1775198373345,
+      "keyFiles": [
+        "check_student_gender.js",
+        "fill_paps_dummy.js",
+        "insert_paps_dummy_data.js",
+        "mcp-smoke-test.ps1",
+        "mcp.err.log"
+      ]
+    },
+    "src": {
+      "path": "src",
+      "purpose": "Source code",
+      "fileCount": 0,
+      "lastAccessed": 1775198373353,
+      "keyFiles": []
+    },
+    "supabase": {
+      "path": "supabase",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1775198373354,
+      "keyFiles": [
+        "config.toml"
+      ]
+    },
+    "temp": {
+      "path": "temp",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1775198373354,
+      "keyFiles": [
+        "analyze_excel.js",
+        "insert_paps_grade.sql"
+      ]
+    },
+    "src\\app": {
+      "path": "src\\app",
+      "purpose": "Application code",
+      "fileCount": 4,
+      "lastAccessed": 1775198373355,
+      "keyFiles": [
+        "favicon.ico",
+        "globals.css",
+        "layout.tsx"
+      ]
+    },
+    "src\\components": {
+      "path": "src\\components",
+      "purpose": "UI components",
+      "fileCount": 7,
+      "lastAccessed": 1775198373356,
+      "keyFiles": [
+        "AdminLogoutButton.tsx",
+        "AdminRoute.tsx",
+        "BackToAdminButton.tsx"
+      ]
+    },
+    "src\\lib": {
+      "path": "src\\lib",
+      "purpose": "Library code",
+      "fileCount": 3,
+      "lastAccessed": 1775198373356,
+      "keyFiles": [
+        "apiAuth.ts",
+        "hub-parser.ts",
+        "supabase.ts"
+      ]
+    },
+    "src\\types": {
+      "path": "src\\types",
+      "purpose": "Type definitions",
+      "fileCount": 2,
+      "lastAccessed": 1775198373356,
+      "keyFiles": [
+        "database.types.ts",
+        "supabaseHelpers.ts"
+      ]
+    }
+  },
+  "hotPaths": [],
+  "userDirectives": []
+}

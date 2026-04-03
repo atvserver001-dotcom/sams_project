@@ -525,7 +525,7 @@ export default function PapsPage() {
     }, 0)
     const hasAnyData = itemResults.some(item => item.result !== null)
 
-    const finalGrade = !hasAnyData ? null
+    const finalGrade = !hasAnyData ? 5
       : totalScore < 20 ? 5
         : totalScore < 40 ? 4
           : totalScore < 60 ? 3
@@ -706,9 +706,10 @@ export default function PapsPage() {
 
   <div class="cats">
   ${itemResults.map(item => {
-      if (!item.result) return ''
       const info = exerciseNames[item.exerciseId]
-      const g = item.result.gradeNo
+      const g = item.result ? item.result.gradeNo : 5
+      const score = item.result ? (item.result.score ?? 0) : 0
+      const label = item.result ? item.label : '5등급'
       const ej = gradeEmoji(g)
       return `
   <div class="cat">
@@ -720,12 +721,12 @@ export default function PapsPage() {
       </div>
       <div class="cat-score">
         <div class="s-label">평가 점수</div>
-        <div class="s-val">${item.result.score ?? '-'}</div>
+        <div class="s-val">${score}</div>
       </div>
       <div class="cat-grade">
         <div class="g-label">평가 결과</div>
         <div class="g-val" style="background:${gradeBgPrint(g)}; color:${gradeColorPrint(g)};">
-          ${item.label}
+          ${label}
         </div>
       </div>
       <div class="cat-emoji">
@@ -741,9 +742,9 @@ export default function PapsPage() {
     <h3>PAPS 평가</h3>
     <div class="sum-row">
       <div class="sum-label">신체 능력 검사 결과</div>
-      <div class="sum-score">${hasAnyData ? totalScore : '-'}<span>/100</span></div>
-      <div class="sum-grade" style="background:${finalGrade ? gradeBgPrint(finalGrade) : '#f3f4f6'}; color:${finalGrade ? gradeColorPrint(finalGrade) : '#6b7280'}; border-color:${finalGrade ? gradeColorPrint(finalGrade) : '#d1d5db'};">
-        ${finalGrade ? finalGrade + '등급' : '-'}
+      <div class="sum-score">${totalScore}<span>/100</span></div>
+      <div class="sum-grade" style="background:${gradeBgPrint(finalGrade)}; color:${gradeColorPrint(finalGrade)}; border-color:${gradeColorPrint(finalGrade)};">
+        ${finalGrade}등급
       </div>
     </div>
   </div>

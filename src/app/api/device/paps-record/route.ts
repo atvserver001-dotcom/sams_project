@@ -45,6 +45,7 @@ function num(v: unknown): number | null {
   return Number.isFinite(n) ? n : null
 }
 
+/** device/ingest 의 ensureStudentExistsForItem 과 동일: 없으면 insert, 유니크 충돌은 정상으로 보고 마지막에 id 조회 */
 async function ensureStudentExists(params: {
   recognition_key: string
   calendarYear: number
@@ -65,24 +66,34 @@ async function ensureStudentExists(params: {
     return { ok: false as const, message: '유효하지 않은 recognition_key 입니다.' }
   }
 
+  // 학년도 계산: 1, 2월 데이터는 전년도 학년도 학생에게 귀속 (ingest 와 동일)
   const studentYear = month === 1 || month === 2 ? calendarYear - 1 : calendarYear
 
-  const { data: existing, error: selectError } = await (supabaseAdmin
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .from('students') as any)
-    .select('id')
-    .eq('school_id', school.id)
-    .eq('year', studentYear)
-    .eq('grade', grade)
-    .eq('class_no', class_no)
-    .eq('student_no', student_no)
-    .maybeSingle()
-
-  if (selectError) {
-    return { ok: false as const, message: selectError.message || '학생 조회 중 오류가 발생했습니다.' }
+  const selectStudentId = async (): Promise<
+    | { ok: true; student_id: string | null }
+    | { ok: false; message: string }
+  > => {
+    const { data, error } = await (supabaseAdmin
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .from('students') as any)
+      .select('id')
+      .eq('school_id', school.id)
+      .eq('year', studentYear)
+      .eq('grade', grade)
+      .eq('class_no', class_no)
+      .eq('student_no', student_no)
+      .maybeSingle()
+    if (error) {
+      return { ok: false, message: error.message || '학생 조회 중 오류가 발생했습니다.' }
+    }
+    return { ok: true, student_id: (data?.id as string | undefined) ?? null }
   }
 
-  if (existing) return { ok: true as const, student_id: existing.id as string, school_id: school.id as string }
+  const first = await selectStudentId()
+  if (!first.ok) return { ok: false as const, message: first.message }
+  if (first.student_id) {
+    return { ok: true as const, student_id: first.student_id, school_id: school.id as string }
+  }
 
   const payload = {
     school_id: school.id,
@@ -93,39 +104,30 @@ async function ensureStudentExists(params: {
     name: `${student_no}번 학생`,
   }
 
-  const { data: inserted, error: insertError } = await (supabaseAdmin
+  // insert 만 수행 (ingest 와 동일). select 를 붙이면 중복 시 응답 형태에 따라 id 를 못 받는 경우가 있음
+  const { error: insertError } = await (supabaseAdmin
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .from('students') as any)
     .insert(payload)
-    .select('id')
-    .maybeSingle()
 
   if (insertError) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const code = (insertError as any).code || ''
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const message = (insertError as any).message || ''
-    if (code === '23505' || message.includes('duplicate key value violates unique constraint')) {
-      const { data: again } = await (supabaseAdmin
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .from('students') as any)
-        .select('id')
-        .eq('school_id', school.id)
-        .eq('year', studentYear)
-        .eq('grade', grade)
-        .eq('class_no', class_no)
-        .eq('student_no', student_no)
-        .maybeSingle()
-      if (again?.id) return { ok: true as const, student_id: again.id as string, school_id: school.id as string }
+    // 유니크 인덱스: 동시 요청·이미 존재 시에도 이후 select 로 id 확보
+    if (!(code === '23505' || message.includes('duplicate key value violates unique constraint'))) {
+      return { ok: false as const, message: message || '학생 정보 저장 중 오류가 발생했습니다.' }
     }
-    return { ok: false as const, message: message || '학생 정보 저장 중 오류가 발생했습니다.' }
   }
 
-  if (!inserted?.id) {
-    return { ok: false as const, message: '학생 생성 후 ID를 확인할 수 없습니다.' }
+  const after = await selectStudentId()
+  if (!after.ok) return { ok: false as const, message: after.message }
+  if (!after.student_id) {
+    return { ok: false as const, message: '학생 생성 후 조회에 실패했습니다.' }
   }
 
-  return { ok: true as const, student_id: inserted.id as string, school_id: school.id as string }
+  return { ok: true as const, student_id: after.student_id, school_id: school.id as string }
 }
 
 function validatePayloadForType(

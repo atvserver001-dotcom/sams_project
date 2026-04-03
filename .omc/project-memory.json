@@ -174,14 +174,14 @@
   "hotPaths": [
     {
       "path": "src\\app\\api\\device\\paps-record\\route.ts",
-      "accessCount": 10,
-      "lastAccessed": 1775199609264,
+      "accessCount": 12,
+      "lastAccessed": 1775199997718,
       "type": "file"
     },
     {
       "path": "",
-      "accessCount": 4,
-      "lastAccessed": 1775199016305,
+      "accessCount": 7,
+      "lastAccessed": 1775200025785,
       "type": "directory"
     },
     {
@@ -192,8 +192,14 @@
     },
     {
       "path": "src\\app\\api\\device\\ingest\\route.ts",
-      "accessCount": 1,
-      "lastAccessed": 1775198610336,
+      "accessCount": 3,
+      "lastAccessed": 1775199722948,
+      "type": "file"
+    },
+    {
+      "path": "src\\types\\database.types.ts",
+      "accessCount": 3,
+      "lastAccessed": 1775200015862,
       "type": "file"
     },
     {
@@ -213,12 +219,6 @@
       "accessCount": 1,
       "lastAccessed": 1775198965617,
       "type": "directory"
-    },
-    {
-      "path": "src\\types\\database.types.ts",
-      "accessCount": 1,
-      "lastAccessed": 1775198969293,
-      "type": "file"
     },
     {
       "path": "scripts\\sql\\create_function_upsert_exercise_record_by_key_idem.sql",

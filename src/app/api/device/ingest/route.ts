@@ -87,13 +87,12 @@ async function ensureStudentExistsForItem(it: IngestItem) {
   // 학년도 계산: 1, 2월 데이터는 전년도 학년도 학생에게 귀속됨
   const studentYear = (it.month === 1 || it.month === 2) ? it.year - 1 : it.year
 
-  // 이미 존재하는지 먼저 조회 (중복 방지)
+  // 이미 존재하는지 먼저 조회 (year 없는 유니크 제약조건에 맞춰 year 제외)
   const { data: existing, error: selectError } = await (supabaseAdmin
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .from('students') as any)
     .select('id')
     .eq('school_id', school.id)
-    .eq('year', studentYear)
     .eq('grade', it.grade)
     .eq('class_no', it.class_no)
     .eq('student_no', it.student_no)

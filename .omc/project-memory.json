@@ -174,8 +174,8 @@
   "hotPaths": [
     {
       "path": "src\\app\\api\\device\\paps-record\\route.ts",
-      "accessCount": 7,
-      "lastAccessed": 1775199216899,
+      "accessCount": 8,
+      "lastAccessed": 1775199448633,
       "type": "file"
     },
     {

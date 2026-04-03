@@ -100,7 +100,7 @@ async function ensureStudentExists(params: {
     return { ok: true as const, student_id: existing.id as string, school_id: school.id as string }
   }
 
-  // 학생이 없으면 upsert 로 생성 + id 반환을 단일 요청으로 처리
+  // 학생이 없으면 insert + select('id') 로 생성과 id 반환을 단일 요청으로 처리
   const payload = {
     school_id: school.id,
     year: studentYear,
@@ -110,20 +110,51 @@ async function ensureStudentExists(params: {
     name: `${sni}번 학생`,
   }
 
-  const { data: upsertedRow, error: upsertError } = await (supabaseAdmin
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .from('students') as any)
-    .upsert(payload, { onConflict: 'school_id,year,grade,class_no,student_no' })
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const insertResult = await (supabaseAdmin.from('students') as any)
+    .insert(payload)
     .select('id')
-    .single()
 
-  if (upsertError || !upsertedRow?.id) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const message = upsertError ? String((upsertError as any).message || '') : ''
-    return { ok: false as const, message: message || '학생 생성에 실패했습니다.' }
+  const insertError = insertResult.error
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const insertData = insertResult.data as any[] | null
+
+  // insert 성공 + id 반환된 경우
+  if (!insertError && insertData && insertData.length > 0 && insertData[0]?.id) {
+    return { ok: true as const, student_id: insertData[0].id as string, school_id: school.id as string }
   }
 
-  return { ok: true as const, student_id: upsertedRow.id as string, school_id: school.id as string }
+  // insert 에러가 중복 키가 아닌 경우 실패
+  if (insertError) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const code = (insertError as any)?.code || ''
+    const message = String((insertError as any)?.message || '')
+    if (code !== '23505' && !message.includes('duplicate key value violates unique constraint')) {
+      return { ok: false as const, message: message || '학생 정보 저장 중 오류가 발생했습니다.' }
+    }
+    // 중복 키 오류 → 이미 존재하는 학생, 아래에서 조회
+  }
+
+  // insert가 데이터 없이 성공했거나 중복 키 → 재조회
+  const { data: found, error: findError } = await (supabaseAdmin
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .from('students') as any)
+    .select('id')
+    .eq('school_id', school.id)
+    .eq('year', studentYear)
+    .eq('grade', gi)
+    .eq('class_no', ci)
+    .eq('student_no', sni)
+    .maybeSingle()
+
+  if (findError || !found?.id) {
+    return {
+      ok: false as const,
+      message: `학생 생성/조회 실패 (insert_err: ${JSON.stringify(insertError)}, insert_data: ${JSON.stringify(insertData)}, find_err: ${JSON.stringify(findError)}, found: ${JSON.stringify(found)})`,
+    }
+  }
+
+  return { ok: true as const, student_id: found.id as string, school_id: school.id as string }
 }
 
 function validatePayloadForType(

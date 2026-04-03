@@ -171,6 +171,19 @@
       ]
     }
   },
-  "hotPaths": [],
+  "hotPaths": [
+    {
+      "path": "src\\app\\api\\device\\paps-record\\route.ts",
+      "accessCount": 2,
+      "lastAccessed": 1775198728784,
+      "type": "file"
+    },
+    {
+      "path": "src\\app\\api\\device\\ingest\\route.ts",
+      "accessCount": 1,
+      "lastAccessed": 1775198610336,
+      "type": "file"
+    }
+  ],
   "userDirectives": []
 }

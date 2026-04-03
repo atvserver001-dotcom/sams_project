@@ -140,16 +140,10 @@ async function ensureStudentExists(params: {
     name: `${sni}번 학생`,
   }
 
-  const { data: insertedRow, error: insertError } = await (supabaseAdmin
+  const { error: insertError } = await (supabaseAdmin
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .from('students') as any)
     .insert(payload)
-    .select('id')
-    .maybeSingle()
-
-  if (!insertError && insertedRow?.id) {
-    return { ok: true as const, student_id: insertedRow.id as string, school_id: school.id as string }
-  }
 
   if (insertError) {
     if (!isDuplicateStudentError(insertError)) {
@@ -157,8 +151,10 @@ async function ensureStudentExists(params: {
       const message = String((insertError as any).message || '')
       return { ok: false as const, message: message || '학생 정보 저장 중 오류가 발생했습니다.' }
     }
+    // 중복 키 오류는 이미 학생이 존재하므로 OK — 아래에서 조회
   }
 
+  // insert 성공 또는 중복 — 별도 조회로 student_id 확보 (ingest 와 동일 패턴)
   const after = await selectStudentIdWithRetry()
   if (!after.ok) return { ok: false as const, message: after.message }
   return { ok: true as const, student_id: after.student_id, school_id: school.id as string }

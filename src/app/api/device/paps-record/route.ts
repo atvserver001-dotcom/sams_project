@@ -80,13 +80,12 @@ async function ensureStudentExists(params: {
   // 학년도 계산: 1, 2월 데이터는 전년도 학년도 학생에게 귀속 (ingest 와 동일)
   const studentYear = mi === 1 || mi === 2 ? yi - 1 : yi
 
-  // 기존 학생 조회
+  // 기존 학생 조회 (year 없는 유니크 제약조건에 맞춰 year 제외)
   const { data: existing, error: selError } = await (supabaseAdmin
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .from('students') as any)
     .select('id')
     .eq('school_id', school.id)
-    .eq('year', studentYear)
     .eq('grade', gi)
     .eq('class_no', ci)
     .eq('student_no', sni)
@@ -136,22 +135,20 @@ async function ensureStudentExists(params: {
   }
 
   // insert가 데이터 없이 성공했거나 중복 키 → 재조회
+  // 중복 키 제약조건이 year 를 포함하지 않을 수 있으므로 (idx_students_school_grade_classno_studentno)
+  // year 없이도 조회하여 기존 학생을 찾는다
   const { data: found, error: findError } = await (supabaseAdmin
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .from('students') as any)
     .select('id')
     .eq('school_id', school.id)
-    .eq('year', studentYear)
     .eq('grade', gi)
     .eq('class_no', ci)
     .eq('student_no', sni)
     .maybeSingle()
 
   if (findError || !found?.id) {
-    return {
-      ok: false as const,
-      message: `학생 생성/조회 실패 (insert_err: ${JSON.stringify(insertError)}, insert_data: ${JSON.stringify(insertData)}, find_err: ${JSON.stringify(findError)}, found: ${JSON.stringify(found)})`,
-    }
+    return { ok: false as const, message: '학생 생성/조회에 실패했습니다.' }
   }
 
   return { ok: true as const, student_id: found.id as string, school_id: school.id as string }

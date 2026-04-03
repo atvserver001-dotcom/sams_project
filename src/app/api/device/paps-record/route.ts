@@ -45,115 +45,6 @@ function num(v: unknown): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-function intRow(v: number): number {
-  return Math.trunc(v)
-}
-
-/** 학생이 없으면 upsert 로 생성하고 id 를 반환. 단일 요청으로 insert+id 반환을 처리해 조회 실패를 방지 */
-async function ensureStudentExists(params: {
-  recognition_key: string
-  calendarYear: number
-  month: number
-  grade: number
-  class_no: number
-  student_no: number
-}) {
-  const { recognition_key, calendarYear, month, grade, class_no, student_no } = params
-
-  const yi = intRow(calendarYear)
-  const mi = intRow(month)
-  const gi = intRow(grade)
-  const ci = intRow(class_no)
-  const sni = intRow(student_no)
-
-  const { data: school, error: schoolError } = await (supabaseAdmin
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .from('schools') as any)
-    .select('id')
-    .eq('recognition_key', recognition_key)
-    .maybeSingle()
-
-  if (schoolError || !school) {
-    return { ok: false as const, message: '유효하지 않은 recognition_key 입니다.' }
-  }
-
-  // 학년도 계산: 1, 2월 데이터는 전년도 학년도 학생에게 귀속 (ingest 와 동일)
-  const studentYear = mi === 1 || mi === 2 ? yi - 1 : yi
-
-  // 기존 학생 조회 (year 없는 유니크 제약조건에 맞춰 year 제외)
-  const { data: existing, error: selError } = await (supabaseAdmin
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .from('students') as any)
-    .select('id')
-    .eq('school_id', school.id)
-    .eq('grade', gi)
-    .eq('class_no', ci)
-    .eq('student_no', sni)
-    .maybeSingle()
-
-  if (selError) {
-    return { ok: false as const, message: selError.message || '학생 조회 중 오류가 발생했습니다.' }
-  }
-
-  if (existing?.id) {
-    return { ok: true as const, student_id: existing.id as string, school_id: school.id as string }
-  }
-
-  // 학생이 없으면 insert + select('id') 로 생성과 id 반환을 단일 요청으로 처리
-  const payload = {
-    school_id: school.id,
-    year: studentYear,
-    grade: gi,
-    class_no: ci,
-    student_no: sni,
-    name: `${sni}번 학생`,
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const insertResult = await (supabaseAdmin.from('students') as any)
-    .insert(payload)
-    .select('id')
-
-  const insertError = insertResult.error
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const insertData = insertResult.data as any[] | null
-
-  // insert 성공 + id 반환된 경우
-  if (!insertError && insertData && insertData.length > 0 && insertData[0]?.id) {
-    return { ok: true as const, student_id: insertData[0].id as string, school_id: school.id as string }
-  }
-
-  // insert 에러가 중복 키가 아닌 경우 실패
-  if (insertError) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const code = (insertError as any)?.code || ''
-    const message = String((insertError as any)?.message || '')
-    if (code !== '23505' && !message.includes('duplicate key value violates unique constraint')) {
-      return { ok: false as const, message: message || '학생 정보 저장 중 오류가 발생했습니다.' }
-    }
-    // 중복 키 오류 → 이미 존재하는 학생, 아래에서 조회
-  }
-
-  // insert가 데이터 없이 성공했거나 중복 키 → 재조회
-  // 중복 키 제약조건이 year 를 포함하지 않을 수 있으므로 (idx_students_school_grade_classno_studentno)
-  // year 없이도 조회하여 기존 학생을 찾는다
-  const { data: found, error: findError } = await (supabaseAdmin
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .from('students') as any)
-    .select('id')
-    .eq('school_id', school.id)
-    .eq('grade', gi)
-    .eq('class_no', ci)
-    .eq('student_no', sni)
-    .maybeSingle()
-
-  if (findError || !found?.id) {
-    return { ok: false as const, message: '학생 생성/조회에 실패했습니다.' }
-  }
-
-  return { ok: true as const, student_id: found.id as string, school_id: school.id as string }
-}
-
 function validatePayloadForType(
   recordType: RecordType,
   body: Body
@@ -196,48 +87,6 @@ function validatePayloadForType(
     default: {
       const _exhaustive: never = recordType
       return { ok: false, message: `알 수 없는 record_type: ${_exhaustive}` }
-    }
-  }
-}
-
-function applyTypeToRow(recordType: RecordType, body: Body, row: Record<string, unknown>) {
-  switch (recordType) {
-    case 'muscular_endurance': {
-      const v = num(body.muscular_endurance)
-      if (v != null) row.muscular_endurance = v
-      break
-    }
-    case 'power': {
-      const p1 = num(body.power_1)
-      const p2 = num(body.power_2)
-      if (p1 != null) row.power_1 = p1
-      if (p2 != null) row.power_2 = p2
-      break
-    }
-    case 'flexibility': {
-      const f1 = num(body.flexibility_1)
-      const f2 = num(body.flexibility_2)
-      if (f1 != null) row.flexibility_1 = f1
-      if (f2 != null) row.flexibility_2 = f2
-      break
-    }
-    case 'cardio': {
-      const c1 = num(body.cardio_1min)
-      const c2 = num(body.cardio_2min)
-      const c3 = num(body.cardio_3min)
-      if (c1 != null) row.cardio_1min = c1
-      if (c2 != null) row.cardio_2min = c2
-      if (c3 != null) row.cardio_3min = c3
-      break
-    }
-    case 'bmi': {
-      const b = num(body.bmi)
-      if (b != null) row.bmi = b
-      break
-    }
-    default: {
-      const _exhaustive: never = recordType
-      void _exhaustive
     }
   }
 }
@@ -291,76 +140,37 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: payloadCheck.message }, { status: 400 })
   }
 
-  const ensured = await ensureStudentExists({
-    recognition_key: String(body.recognition_key),
-    calendarYear,
-    month,
-    grade,
-    class_no,
-    student_no,
+  // RPC 함수로 학생 생성 + paps_records upsert 를 단일 호출로 처리
+  // SECURITY DEFINER 로 RLS 를 우회하며, ingest 의 RPC 패턴과 동일
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabaseAdmin as any).rpc('upsert_paps_record', {
+    p_recognition_key: String(body.recognition_key),
+    p_year: calendarYear,
+    p_month: month,
+    p_grade: grade,
+    p_class_no: class_no,
+    p_student_no: student_no,
+    p_record_type: recordType,
+    p_muscular_endurance: num(body.muscular_endurance),
+    p_power_1: num(body.power_1),
+    p_power_2: num(body.power_2),
+    p_flexibility_1: num(body.flexibility_1),
+    p_flexibility_2: num(body.flexibility_2),
+    p_cardio_1min: num(body.cardio_1min),
+    p_cardio_2min: num(body.cardio_2min),
+    p_cardio_3min: num(body.cardio_3min),
+    p_bmi: num(body.bmi),
   })
-  if (!ensured.ok) {
-    return NextResponse.json({ error: ensured.message }, { status: 400 })
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  const { student_id } = ensured
-
-  const { data: existing, error: selErr } = await (supabaseAdmin
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .from('paps_records' as any)
-    .select(
-      'student_id,year,month,muscular_endurance,power_1,power_2,flexibility_1,flexibility_2,cardio_1min,cardio_2min,cardio_3min,bmi'
-    )
-    .eq('student_id', student_id)
-    .eq('year', calendarYear)
-    .eq('month', month)
-    .maybeSingle())
-
-  if (selErr) {
-    return NextResponse.json({ error: selErr.message }, { status: 500 })
-  }
-
-  const row: Record<string, unknown> = existing
-    ? { ...(existing as unknown as Record<string, unknown>) }
-    : {
-        student_id,
-        year: calendarYear,
-        month,
-        muscular_endurance: null,
-        power_1: null,
-        power_2: null,
-        flexibility_1: null,
-        flexibility_2: null,
-        cardio_1min: null,
-        cardio_2min: null,
-        cardio_3min: null,
-        bmi: null,
-      }
-
-  applyTypeToRow(recordType, body, row)
-
-  if (existing) {
-    // 기존 레코드 업데이트
-    const { student_id: _sid, year: _y, month: _m, ...updateFields } = row
-    const { error: upErr } = await (supabaseAdmin
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .from('paps_records' as any)
-      .update(updateFields)
-      .eq('student_id', student_id)
-      .eq('year', calendarYear)
-      .eq('month', month))
-    if (upErr) {
-      return NextResponse.json({ error: upErr.message }, { status: 500 })
-    }
-  } else {
-    // 새 레코드 삽입
-    const { error: insErr } = await (supabaseAdmin
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .from('paps_records' as any)
-      .insert(row))
-    if (insErr) {
-      return NextResponse.json({ error: insErr.message }, { status: 500 })
-    }
+  // RPC 는 jsonb 를 반환: { ok: true/false, error?: string, student_id?: string }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const result = data as any
+  if (result && result.ok === false) {
+    return NextResponse.json({ error: result.error }, { status: 400 })
   }
 
   return NextResponse.json({ ok: true, record_type: recordType })

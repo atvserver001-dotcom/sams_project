@@ -339,13 +339,28 @@ export async function POST(request: NextRequest) {
 
   applyTypeToRow(recordType, body, row)
 
-  const { error: upErr } = await (supabaseAdmin
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .from('paps_records' as any)
-    .upsert(row, { onConflict: 'student_id,year,month' }))
-
-  if (upErr) {
-    return NextResponse.json({ error: upErr.message }, { status: 500 })
+  if (existing) {
+    // 기존 레코드 업데이트
+    const { student_id: _sid, year: _y, month: _m, ...updateFields } = row
+    const { error: upErr } = await (supabaseAdmin
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .from('paps_records' as any)
+      .update(updateFields)
+      .eq('student_id', student_id)
+      .eq('year', calendarYear)
+      .eq('month', month))
+    if (upErr) {
+      return NextResponse.json({ error: upErr.message }, { status: 500 })
+    }
+  } else {
+    // 새 레코드 삽입
+    const { error: insErr } = await (supabaseAdmin
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .from('paps_records' as any)
+      .insert(row))
+    if (insErr) {
+      return NextResponse.json({ error: insErr.message }, { status: 500 })
+    }
   }
 
   return NextResponse.json({ ok: true, record_type: recordType })

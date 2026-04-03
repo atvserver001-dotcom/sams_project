@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(claude mcp:*)",
+      "Bash(node -e ':*)",
+      "mcp__supabase__execute_sql"
     ]
   }
 }

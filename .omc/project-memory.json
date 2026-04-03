@@ -174,8 +174,8 @@
   "hotPaths": [
     {
       "path": "src\\app\\api\\device\\paps-record\\route.ts",
-      "accessCount": 12,
-      "lastAccessed": 1775199997718,
+      "accessCount": 14,
+      "lastAccessed": 1775200623641,
       "type": "file"
     },
     {
@@ -231,6 +231,12 @@
       "accessCount": 1,
       "lastAccessed": 1775199019180,
       "type": "file"
+    },
+    {
+      "path": ".env.local",
+      "accessCount": 1,
+      "lastAccessed": 1775200333645,
+      "type": "directory"
     }
   ],
   "userDirectives": []

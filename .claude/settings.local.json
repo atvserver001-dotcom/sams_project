@@ -4,7 +4,10 @@
       "Bash(npx tsc:*)",
       "Bash(claude mcp:*)",
       "Bash(node -e ':*)",
-      "mcp__supabase__execute_sql"
+      "mcp__supabase__execute_sql",
+      "Bash(npx next:*)",
+      "Bash(wait)",
+      "mcp__supabase__list_projects"
     ]
   }
 }

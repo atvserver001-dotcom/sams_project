@@ -533,10 +533,7 @@ function StudentDialog({ open, onClose, initial, year, grade, classNo, onSaved }
           grade: Number(form.grade),
           class_no: Number(form.class_no),
           student_no: originalNo,
-          // 이동 "당한" 번호(원래 비어있던 번호)를 그대로 유지하기 위해
-          // placeholder의 이름은 변경 후 번호(parsedNo)를 기준으로 표시
-          // 예) 5번 홍길동 -> 6번으로 이동 시, 5번 자리에 "6번 학생" 생성
-          name: `${parsedNo}번 학생`,
+          name: `${originalNo}번 학생`,
           gender: null,
           birth_date: null,
           email: null,

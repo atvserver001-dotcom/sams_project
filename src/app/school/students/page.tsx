@@ -354,6 +354,8 @@ function StudentDialog({ open, onClose, initial, year, grade, classNo, onSaved }
     }
 
     const payload = {
+      id: isEdit && initial ? initial.id : undefined,
+      source_student_no: initial && initial.student_no != null ? initial.student_no : undefined,
       year: Number(form.year),
       grade: Number(form.grade),
       class_no: Number(form.class_no),
@@ -367,191 +369,17 @@ function StudentDialog({ open, onClose, initial, year, grade, classNo, onSaved }
       notes: form.notes || null,
     }
 
-    // 번호 변경 여부 (기존 번호가 있었을 때만 비교)
-    const originalNo = initial && initial.student_no != null ? initial.student_no : null
-    const numberChanged = originalNo != null && originalNo !== parsedNo
-
-    // 번호가 변경되고, 수정 모드일 때에는 충돌 번호가 있어도 "이동" 되도록 처리
-    if (isEdit && numberChanged && initial) {
-      // 현재 학급의 학생 목록 조회
-      let list: StudentRow[] = []
-      try {
-        const listRes = await fetch(`/api/school/students?year=${year}&grade=${grade}&class_no=${classNo}`, { credentials: 'include' })
-        const listData = await listRes.json().catch(() => ({}))
-        list = Array.isArray(listData.students) ? listData.students : []
-      } catch {
-        list = []
-      }
-
-      const currentId = initial.id
-      const target = list.find(st => st.student_no === parsedNo && st.id !== currentId) || null
-
-      if (target) {
-        // 대상 번호에 이미 학생이 있는 경우: 번호 스왑 처리
-        // 1) 사용 가능한 임시 번호(buffer)를 찾는다 (1~50 범위)
-        let bufferNo: number | null = null
-        for (let n = 1; n <= 50; n++) {
-          if (!list.some(st => st.student_no === n)) {
-            bufferNo = n
-            break
-          }
-        }
-
-        if (bufferNo == null) {
-          alert('번호를 이동할 수 없습니다. (사용 가능한 번호가 없습니다.)')
-          return
-        }
-
-        // 2) 대상 학생을 buffer 번호로 이동
-        const patchTargetToBuffer = await fetch(`/api/school/students/${target.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ student_no: bufferNo }),
-          credentials: 'include',
-        }).then(r => r.json().then(d => ({ ok: r.ok, data: d })).catch(() => ({ ok: r.ok, data: {} })))
-
-        if (!patchTargetToBuffer.ok) {
-          alert(patchTargetToBuffer.data?.error || '번호 이동 중 오류가 발생했습니다. (1단계)')
-          return
-        }
-
-        // 3) 현재 학생을 새로운 번호(parsedNo)로 이동
-        const patchCurrentToNew = await fetch(`/api/school/students/${currentId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-          credentials: 'include',
-        }).then(r => r.json().then(d => ({ ok: r.ok, data: d })).catch(() => ({ ok: r.ok, data: {} })))
-
-        if (!patchCurrentToNew.ok) {
-          alert(patchCurrentToNew.data?.error || '번호 이동 중 오류가 발생했습니다. (2단계)')
-          return
-        }
-
-        // 4) 대상 학생을 원래 번호(originalNo)로 이동
-        const patchTargetToOriginal = await fetch(`/api/school/students/${target.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ student_no: originalNo }),
-          credentials: 'include',
-        }).then(r => r.json().then(d => ({ ok: r.ok, data: d })).catch(() => ({ ok: r.ok, data: {} })))
-
-        if (!patchTargetToOriginal.ok) {
-          alert(patchTargetToOriginal.data?.error || '번호 이동 중 오류가 발생했습니다. (3단계)')
-          return
-        }
-
-        // 성공 안내 팝업
-        alert(`번호 변경을 하였습니다.\n${parsedNo} 번의 데이터는 ${originalNo} 번이 됩니다.`)
-        await onSaved()
-        return
-      }
-    }
-
-    // 신규 생성(학생데이터가 없던 번호에서 시작) + 번호 변경인 경우에도
-    // 대상 번호에 학생이 있으면 스왑되도록 처리
-    if (!isEdit && numberChanged && originalNo != null) {
-      let list: StudentRow[] = []
-      try {
-        const listRes = await fetch(`/api/school/students?year=${year}&grade=${grade}&class_no=${classNo}`, { credentials: 'include' })
-        const listData = await listRes.json().catch(() => ({}))
-        list = Array.isArray(listData.students) ? listData.students : []
-      } catch {
-        list = []
-      }
-
-      const target = list.find(st => st.student_no === parsedNo) || null
-
-      if (target) {
-        // 1) 대상 학생을 원래 번호(originalNo)로 이동
-        const patchTargetToOriginal = await fetch(`/api/school/students/${target.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ student_no: originalNo }),
-          credentials: 'include',
-        }).then(r => r.json().then(d => ({ ok: r.ok, data: d })).catch(() => ({ ok: r.ok, data: {} })))
-
-        if (!patchTargetToOriginal.ok) {
-          alert(patchTargetToOriginal.data?.error || '번호 이동 중 오류가 발생했습니다. (대상 이동)')
-          return
-        }
-
-        // 2) 새 학생을 변경된 번호(parsedNo)로 생성
-        const createNew = await fetch('/api/school/students', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-          credentials: 'include',
-        }).then(r => r.json().then(d => ({ ok: r.ok, data: d })).catch(() => ({ ok: r.ok, data: {} })))
-
-        if (!createNew.ok) {
-          alert(createNew.data?.error || '번호 이동 중 오류가 발생했습니다. (신규 생성)')
-          return
-        }
-
-        alert(`번호 변경을 하였습니다.\n${parsedNo} 번의 데이터는 ${originalNo} 번이 됩니다.`)
-        await onSaved()
-        return
-      }
-    }
-
-    // 여기까지 왔다는 것은
-    // 1) 신규 생성이거나
-    // 2) 번호 변경이 없거나
-    // 3) 번호 변경이지만 대상 번호에 학생이 없어서 단순 PATCH/POST & placeholder 처리만 하면 되는 경우
-
-    let res: Response
-    if (isEdit && initial) {
-      res = await fetch(`/api/school/students/${initial.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        credentials: 'include',
-      })
-    } else {
-      res = await fetch('/api/school/students', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        credentials: 'include',
-      })
-    }
+    const res = await fetch('/api/school/students/save-slot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      credentials: 'include',
+    })
 
     const data = await res.json().catch(() => ({}))
     if (!res.ok) {
       alert(data.error || '저장에 실패했습니다.')
       return
-    }
-
-    // 번호만 이동하는 경우(대상 번호가 비어 있던 경우): 원래 번호 자리에 placeholder 학생 생성
-    if (numberChanged && originalNo != null) {
-      alert(`번호 변경을 하였습니다.\n${parsedNo} 번의 데이터는 ${originalNo} 번이 됩니다.`)
-
-      try {
-        const placeholderPayload = {
-          year: Number(form.year),
-          grade: Number(form.grade),
-          class_no: Number(form.class_no),
-          student_no: originalNo,
-          name: `${originalNo}번 학생`,
-          gender: null,
-          birth_date: null,
-          email: null,
-          height_cm: null,
-          weight_kg: null,
-          notes: null,
-        }
-
-        await fetch('/api/school/students', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(placeholderPayload),
-          credentials: 'include',
-        }).then(r => r.json().catch(() => ({})))
-        // 이미 존재(중복키)하는 경우 등은 조용히 무시
-      } catch {
-        // 보조 처리 실패는 전체 저장 실패로 보지 않음
-      }
     }
 
     await onSaved()

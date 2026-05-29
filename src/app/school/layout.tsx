@@ -105,14 +105,17 @@ export default function SchoolLayout({ children }: { children: React.ReactNode }
 
   const menuDevices = useMemo(() => devices, [devices])
   const menuContents = useMemo(() => contents, [contents])
+  const menuLinkClassName = 'shrink-0 whitespace-nowrap text-gray-800 hover:text-gray-900 hover:underline'
+  const disabledMenuClassName = 'shrink-0 whitespace-nowrap text-gray-400 cursor-not-allowed'
+  const mutedMenuClassName = 'shrink-0 whitespace-nowrap text-gray-400 cursor-pointer'
   return (
     <SchoolRoute>
       <div className="min-h-screen bg-gradient-to-br from-purple-600 via-purple-700 to-indigo-800">
         <nav className="bg-white/90 backdrop-blur border-b border-white/30">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between h-16">
-              <div className="flex items-center space-x-6">
-                <div className="flex items-center gap-2">
+            <div className="flex h-16 items-center justify-between gap-4">
+              <div className="flex min-w-0 flex-1 items-center gap-4">
+                <div className="flex shrink-0 items-center gap-2">
                   <Image
                     src="/image/logo_atv.svg"
                     alt="스포파크 로고"
@@ -123,8 +126,8 @@ export default function SchoolLayout({ children }: { children: React.ReactNode }
                   />
                   <span className="text-lg font-semibold text-gray-900">운영툴</span>
                 </div>
-                <div className="flex items-center ml-10 gap-12 md:gap-16 text-sm font-medium">
-                  <Link href="/school/students" className="text-gray-800 hover:text-gray-900 hover:underline">학생 정보입력</Link>
+                <div className="ml-2 flex min-w-0 flex-1 items-center gap-4 overflow-x-auto whitespace-nowrap text-sm font-medium [scrollbar-width:none] md:gap-6 [&::-webkit-scrollbar]:hidden">
+                  <Link href="/school/students" className={menuLinkClassName}>학생 정보입력</Link>
 
                   {!loadingContents && menuContents.map((c, idx) => {
                     const name = c.name.replace(/\s/g, '')
@@ -140,7 +143,7 @@ export default function SchoolLayout({ children }: { children: React.ReactNode }
                         <button
                           key={`${c.school_content_id}-${idx}`}
                           onClick={() => alert('기간만료 되었습니다.')}
-                          className="text-gray-400 cursor-not-allowed"
+                          className={disabledMenuClassName}
                           title={c.name}
                         >
                           {c.name}
@@ -152,7 +155,7 @@ export default function SchoolLayout({ children }: { children: React.ReactNode }
                         <Link
                           key={`${c.school_content_id}-${idx}`}
                           href="/school/exercises"
-                          className="text-gray-800 hover:text-gray-900 hover:underline"
+                          className={menuLinkClassName}
                           title={c.name}
                         >
                           {c.name}
@@ -164,7 +167,7 @@ export default function SchoolLayout({ children }: { children: React.ReactNode }
                         <Link
                           key={`${c.school_content_id}-${idx}`}
                           href="/school/heart-rate"
-                          className="text-gray-800 hover:text-gray-900 hover:underline"
+                          className={menuLinkClassName}
                           title={c.name}
                         >
                           {c.name}
@@ -176,7 +179,7 @@ export default function SchoolLayout({ children }: { children: React.ReactNode }
                         <Link
                           key={`${c.school_content_id}-${idx}`}
                           href="/school/paps"
-                          className="text-gray-800 hover:text-gray-900 hover:underline"
+                          className={menuLinkClassName}
                           title={c.name}
                         >
                           {c.name}
@@ -189,7 +192,7 @@ export default function SchoolLayout({ children }: { children: React.ReactNode }
                         key={`${c.school_content_id}-${idx}`}
                         type="button"
                         onClick={() => alert('준비 중 입니다.')}
-                        className="text-gray-800 hover:text-gray-900 hover:underline"
+                        className={menuLinkClassName}
                         title={c.name}
                       >
                         {c.name}
@@ -212,7 +215,7 @@ export default function SchoolLayout({ children }: { children: React.ReactNode }
                         <button
                           key={`${d.device_id}-${idx}`}
                           onClick={() => alert('기간만료 되었습니다.')}
-                          className="text-gray-400 cursor-not-allowed"
+                          className={disabledMenuClassName}
                         >
                           {d.device_name}
                         </button>
@@ -220,21 +223,21 @@ export default function SchoolLayout({ children }: { children: React.ReactNode }
                     }
                     if (isExercises) {
                       return (
-                        <Link key={`${d.device_id}-${idx}`} href="/school/exercises" className="text-gray-800 hover:text-gray-900 hover:underline">
+                        <Link key={`${d.device_id}-${idx}`} href="/school/exercises" className={menuLinkClassName}>
                           {d.device_name}
                         </Link>
                       )
                     }
                     if (isHeartRate) {
                       return (
-                        <Link key={`${d.device_id}-${idx}`} href="/school/heart-rate" className="text-gray-800 hover:text-gray-900 hover:underline">
+                        <Link key={`${d.device_id}-${idx}`} href="/school/heart-rate" className={menuLinkClassName}>
                           {d.device_name}
                         </Link>
                       )
                     }
                     if (isPaps) {
                       return (
-                        <Link key={`${d.device_id}-${idx}`} href="/school/paps" className="text-gray-800 hover:text-gray-900 hover:underline">
+                        <Link key={`${d.device_id}-${idx}`} href="/school/paps" className={menuLinkClassName}>
                           {d.device_name}
                         </Link>
                       )
@@ -245,7 +248,7 @@ export default function SchoolLayout({ children }: { children: React.ReactNode }
                         key={`${d.device_id}-${idx}`}
                         type="button"
                         onClick={() => alert('준비 중 입니다.')}
-                        className="text-gray-400 cursor-pointer"
+                        className={mutedMenuClassName}
                       >
                         {d.device_name}
                       </button>
@@ -254,16 +257,30 @@ export default function SchoolLayout({ children }: { children: React.ReactNode }
 
 
                   <Link
+                    href="/school/ranking"
+                    className={menuLinkClassName}
+                  >
+                    랭킹
+                  </Link>
+
+                  <Link
+                    href="/school/dashboard"
+                    className={menuLinkClassName}
+                  >
+                    학교 전체 통계
+                  </Link>
+
+                  <Link
                     href="/school/settings"
-                    className="text-gray-800 hover:text-gray-900 hover:underline"
+                    className={menuLinkClassName}
                   >
                     디바이스 설정
                   </Link>
                 </div>
               </div>
-              <div className="flex items-center gap-4">
+              <div className="flex shrink-0 items-center gap-3">
                 {schoolName && (
-                  <span className="text-md font-semibold text-gray-700">{schoolName}</span>
+                  <span className="text-md max-w-[180px] truncate whitespace-nowrap font-semibold text-gray-700">{schoolName}</span>
                 )}
                 {isAdmin && schoolName ? (
                   <BackToAdminButton />

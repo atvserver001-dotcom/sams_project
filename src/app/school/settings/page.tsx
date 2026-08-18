@@ -3,6 +3,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { XMarkIcon } from '@heroicons/react/24/outline'
 
+import {
+  isCanonicalHeartRateDeviceId,
+  validateHeartRateMappings,
+} from '@/lib/heartRateMapping'
+
 type SchoolDeviceInstance = {
   id: string
   device_id: string
@@ -173,6 +178,24 @@ export default function SchoolSettingsPage() {
   const [heartRateMappings, setHeartRateMappings] = useState<Array<{ student_no: number; device_id: string }>>([])
   const [heartRateMappingSaving, setHeartRateMappingSaving] = useState(false)
   const [heartRateMappingLabel, setHeartRateMappingLabel] = useState('')
+  const heartRateMappingValidation = useMemo(
+    () => validateHeartRateMappings(heartRateMappings),
+    [heartRateMappings],
+  )
+  const duplicateHeartRateDeviceIds = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const mapping of heartRateMappings) {
+      if (mapping.device_id !== '') {
+        counts.set(mapping.device_id, (counts.get(mapping.device_id) ?? 0) + 1)
+      }
+    }
+    return new Set(
+      [...counts.entries()]
+        .filter(([, count]) => count > 1)
+        .map(([deviceId]) => deviceId),
+    )
+  }, [heartRateMappings])
+  const hasInvalidHeartRateMapping = !heartRateMappingValidation.ok
 
   const loadDevices = async () => {
     setLoadingDevices(true)
@@ -775,6 +798,11 @@ export default function SchoolSettingsPage() {
 
   // 하트 케어 ID 매핑 저장
   const saveHeartRateMappings = async () => {
+    if (!heartRateMappingValidation.ok) {
+      alert(heartRateMappingValidation.error)
+      return
+    }
+
     setHeartRateMappingSaving(true)
     try {
       const res = await fetch('/api/school/heart-rate-mappings', {
@@ -1566,30 +1594,50 @@ export default function SchoolSettingsPage() {
                   <XMarkIcon className="h-5 w-5" />
                 </button>
               </div>
-              <p className="text-xs text-gray-500 mt-1">1~30번 학생의 Heart Care 디바이스 ID를 입력하세요.</p>
+              <p className="text-xs text-gray-500 mt-1">
+                1~30번 측정 슬롯은 각 학급의 같은 번호 학생에게 연결됩니다. 심박계에 표시된 7자리 숫자를 앞자리 0까지 그대로 입력하세요.
+              </p>
             </div>
 
             <div className="flex-1 overflow-y-auto px-6 py-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-                {heartRateMappings.map((mapping) => (
+                {heartRateMappings.map((mapping) => {
+                  const hasInvalidFormat = mapping.device_id !== '' && !isCanonicalHeartRateDeviceId(mapping.device_id)
+                  const isDuplicate = mapping.device_id !== '' && duplicateHeartRateDeviceIds.has(mapping.device_id)
+                  const isInvalid = hasInvalidFormat || isDuplicate
+                  const errorId = `heart-rate-id-error-${mapping.student_no}`
+                  return (
                   <div key={mapping.student_no} className="flex flex-col gap-1">
                     <label className="text-xs font-semibold text-gray-700">
-                      {mapping.student_no}번
+                      {mapping.student_no}번 슬롯
                     </label>
                     <input
                       type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]{7}"
                       value={mapping.device_id}
+                      aria-invalid={isInvalid}
+                      aria-describedby={isInvalid ? errorId : undefined}
                       onChange={(e) => {
                         const newMappings = [...heartRateMappings]
                         const idx = mapping.student_no - 1
                         newMappings[idx].device_id = e.target.value
                         setHeartRateMappings(newMappings)
                       }}
-                      className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      placeholder="디바이스 ID"
+                      className={`rounded-lg border px-2 py-1.5 text-sm focus:outline-none focus:ring-2 ${isInvalid
+                        ? 'border-rose-500 bg-rose-50 focus:ring-rose-300'
+                        : 'border-gray-300 focus:ring-indigo-500'
+                        }`}
+                      placeholder="0000000"
                     />
+                    {isInvalid && (
+                      <span id={errorId} className="text-[11px] font-medium text-rose-600">
+                        {hasInvalidFormat ? '7자리 숫자를 입력하세요.' : '다른 측정 슬롯과 중복된 ID입니다.'}
+                      </span>
+                    )}
                   </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
 
@@ -1606,7 +1654,7 @@ export default function SchoolSettingsPage() {
               </button>
               <button
                 type="button"
-                disabled={heartRateMappingSaving}
+                disabled={heartRateMappingSaving || hasInvalidHeartRateMapping}
                 onClick={saveHeartRateMappings}
                 className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-60"
               >

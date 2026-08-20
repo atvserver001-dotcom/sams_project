@@ -65,6 +65,8 @@ const connectionPresentation: Record<WebSerialSessionState, { label: string; cla
   error: { label: '연결 오류', classes: 'bg-rose-100 text-rose-700' },
 }
 
+const EMPTY_MINUTE_POINTS: HeartRateMinutePoint[] = []
+
 export default function LiveHeartRateBoard({
   students,
   mappings,
@@ -264,69 +266,81 @@ export default function LiveHeartRateBoard({
             : signalPresentation[signalState]
           const currentBpm = isWarming ? null : currentHeartRateForSignal(stats, signalState)
           const displayStats = isWarming ? undefined : stats
-          const minutePoints = minutePointsByStudentNumber[studentNumber] ?? []
+          const minutePoints = minutePointsByStudentNumber[studentNumber] ?? EMPTY_MINUTE_POINTS
 
           return (
             <article
               key={studentNumber}
-              className={`${isFullscreen ? 'min-h-0 overflow-hidden p-1.5' : 'min-h-40 p-2.5'} rounded-lg bg-white shadow-sm transition-colors ${signalState === 'fresh' && !isWarming ? 'ring-2 ring-inset ring-emerald-300' : ''}`}
+              className={`${isFullscreen ? 'flex min-h-0 flex-col overflow-hidden p-1.5' : 'min-h-40 p-2.5'} rounded-lg bg-white shadow-sm transition-colors ${signalState === 'fresh' && !isWarming ? 'ring-2 ring-inset ring-emerald-300' : ''}`}
               aria-label={`${studentNumber}번 슬롯 ${student?.name ?? '학생'} 심박 현황`}
             >
-              <div className="flex items-start justify-between gap-2">
-                <h3 className="truncate text-sm font-bold text-gray-900">
-                  {student?.name ?? `${studentNumber}번 학생`}
-                </h3>
-                <span className="shrink-0 rounded-full bg-indigo-500 px-2 py-0.5 text-[11px] font-bold text-white">
-                  #{studentNumber} 슬롯
-                </span>
-              </div>
-
               {isFullscreen ? (
                 <>
-                  <div className="mt-0.5 flex h-7 items-center gap-2">
-                    <div className={`flex min-w-[3.25rem] items-baseline justify-center font-black tracking-tight ${currentBpm ? 'text-indigo-600' : 'text-indigo-400'}`}>
-                      {isWarming
-                        ? <span className="text-xs text-blue-600">연결 중</span>
-                        : <><span className="text-xl">{currentBpm ?? '--'}</span><span className="ml-0.5 text-[8px] text-gray-400">BPM</span></>}
+                  <div className="flex shrink-0 items-start justify-between gap-1">
+                    <h3 className="min-w-0 flex-1 truncate text-sm font-bold text-gray-900">
+                      {student?.name ?? `${studentNumber}번 학생`}
+                    </h3>
+                    <div className="flex min-w-0 items-center gap-1">
+                      <span className={`inline-flex min-w-0 items-center gap-1 text-[9px] font-semibold ${hasMapping ? signal.text : 'text-gray-400'}`}>
+                        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${hasMapping ? signal.dot : 'bg-gray-300'}`} aria-hidden="true" />
+                        <span className="truncate">{hasMapping ? signal.label : '미등록'}</span>
+                      </span>
+                      <span className="shrink-0 rounded-full bg-indigo-500 px-2 py-0.5 text-[11px] font-bold text-white">
+                        {studentNumber}번
+                      </span>
+                      <HeartRateBatteryIcon percent={stats?.batteryPercent} stale={signalState !== 'fresh'} />
                     </div>
-                    <dl className="grid min-w-0 flex-1 grid-cols-3 gap-1 text-center leading-none">
-                      <div>
-                        <dt className="text-[8px] text-gray-400">최대</dt>
-                        <dd className="mt-1 text-[10px] font-bold text-gray-800">{displayStats?.maxBpm ?? '--'}</dd>
-                      </div>
-                      <div>
-                        <dt className="text-[8px] text-gray-400">평균</dt>
-                        <dd className="mt-1 text-[10px] font-bold text-gray-800">
-                          {displayStats ? averageHeartRate(displayStats).toFixed(1) : '--'}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt className="text-[8px] text-gray-400">최저</dt>
-                        <dd className="mt-1 text-[10px] font-bold text-gray-800">{displayStats?.minBpm ?? '--'}</dd>
-                      </div>
-                    </dl>
                   </div>
 
-                  <div className="mt-0.5 flex h-4 items-center justify-between gap-1 border-t border-gray-100 text-[9px]">
-                    <span className={`inline-flex min-w-0 items-center gap-1 truncate font-semibold ${hasMapping ? signal.text : 'text-gray-400'}`}>
-                      <span className={`h-1.5 w-1.5 rounded-full ${hasMapping ? signal.dot : 'bg-gray-300'}`} />
-                      {hasMapping ? signal.label : '심박계 ID 미등록'}
-                    </span>
-                    <HeartRateBatteryIcon percent={stats?.batteryPercent} stale={signalState !== 'fresh'} />
+                  <div className={`mt-0.5 flex h-9 shrink-0 items-baseline justify-center font-black leading-none tracking-tight ${currentBpm ? 'text-indigo-600' : 'text-indigo-400'}`}>
+                    {isWarming ? (
+                      <span className="text-sm text-blue-600">연결 중</span>
+                    ) : (
+                      <>
+                        <span className="text-3xl">{currentBpm ?? '--'}</span>
+                        <span className="ml-1 text-[10px] font-semibold uppercase tracking-widest text-gray-400">BPM</span>
+                      </>
+                    )}
                   </div>
 
-                  <div className="mt-px min-h-0 border-t border-gray-100 pt-px">
+                  <dl className="mt-0.5 grid shrink-0 grid-cols-3 gap-2 text-center leading-none">
+                    <div>
+                      <dt className="text-[8px] text-gray-400">최저</dt>
+                      <dd className="mt-0.5 text-[10px] font-bold text-gray-800">{displayStats?.minBpm ?? '--'}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-[8px] text-gray-400">평균</dt>
+                      <dd className="mt-0.5 text-[10px] font-bold text-gray-800">
+                        {displayStats ? averageHeartRate(displayStats).toFixed(1) : '--'}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-[8px] text-gray-400">최대</dt>
+                      <dd className="mt-0.5 text-[10px] font-bold text-gray-800">{displayStats?.maxBpm ?? '--'}</dd>
+                    </div>
+                  </dl>
+
+                  <div className="mt-0.5 flex min-h-0 w-full flex-1 flex-col border-t border-gray-100 pt-px">
                     <HeartRateMinuteChart
                       points={minutePoints}
                       ageYears={participantPresentation?.ageYears ?? null}
-                    estimatedHrMax={participantPresentation?.estimatedHrMax ?? null}
-                    scale={bpmScale}
+                      estimatedHrMax={participantPresentation?.estimatedHrMax ?? null}
+                      scale={bpmScale}
                       studentName={student?.name ?? `${studentNumber}번 학생`}
                     />
                   </div>
                 </>
               ) : (
                 <>
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="truncate text-sm font-bold text-gray-900">
+                      {student?.name ?? `${studentNumber}번 학생`}
+                    </h3>
+                    <span className="shrink-0 rounded-full bg-indigo-500 px-2 py-0.5 text-[11px] font-bold text-white">
+                      #{studentNumber} 슬롯
+                    </span>
+                  </div>
+
                   <div className="mt-4 text-center">
                     <div className={`flex items-center justify-center text-3xl font-black tracking-tight ${currentBpm ? 'text-indigo-600' : 'text-indigo-400'}`}>
                       {isWarming ? <span className="text-sm text-blue-600">연결 중</span> : currentBpm ?? '--'}

@@ -153,8 +153,8 @@ function HeartRateMinuteChart({
   const chartLabel = `${studentName}, ${ageLabel}, ${latestPoint?.minuteIndex ?? 0}분까지 심박 막대그래프, ${extremaLabel}`
 
   return (
-    <div className="min-h-0" aria-label={`${studentName} 1분 평균 그래프 영역`}>
-      <div className="mb-0.5 flex h-3 items-center justify-between text-[8px] leading-none text-gray-400" aria-hidden="true">
+    <div className="flex h-full min-h-0 flex-col" aria-label={`${studentName} 1분 평균 그래프 영역`}>
+      <div className="mb-0.5 flex h-3 shrink-0 items-center justify-between text-[8px] leading-none text-gray-400" aria-hidden="true">
         <span>1분 평균 · 1–{chartModel.totalMinutes}분</span>
         <span>
           {chartModel.maximum ? `▲${Math.round(chartModel.maximum.averageBpm)}` : '▲--'}
@@ -162,7 +162,7 @@ function HeartRateMinuteChart({
           {chartModel.minimum ? `◆${Math.round(chartModel.minimum.averageBpm)}` : '◆--'}
         </span>
       </div>
-      <div className="h-9 min-h-0 w-full">
+      <div className="relative min-h-0 w-full flex-1">
         <Bar
           data={chartModel.data}
           options={options}

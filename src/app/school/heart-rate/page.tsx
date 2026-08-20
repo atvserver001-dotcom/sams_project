@@ -5,18 +5,37 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import LiveHeartRateBoard from '@/components/heart-rate/LiveHeartRateBoard'
 import { useWebSerialHeartRate } from '@/components/heart-rate/useWebSerialHeartRate'
 import {
-  HeartRateStatsByStudentNumber,
+  HeartRateMeasurementView,
+  HeartRateMinutePoint as CollectedHeartRateMinutePoint,
   createHeartRateStatsCollector,
 } from '@/lib/heartRateCollector'
 import {
   GatewayHeartRateEvent,
   HeartRateDeviceMapping,
-  averageHeartRate,
   findMappedStudentNumber,
 } from '@/lib/heartRateSerial'
 import { validateHeartRateMappings } from '@/lib/heartRateMapping'
+import {
+  HeartRateSessionPayload,
+  serializeHeartRateTransportQuality,
+} from '@/lib/heartRateSession'
+import {
+  assertHeartRateParticipantSnapshot,
+  buildHeartRateParticipantIndex,
+  serializeCollectedHeartRatePoints,
+  splitHeartRateCheckpointPoints,
+} from '@/lib/heartRateSessionClient'
+import {
+  checkpointHeartRateSession,
+  discardHeartRateSession,
+  finalizeHeartRateSession,
+  stabilizeHeartRateSession,
+  startHeartRateSession,
+  stopHeartRateSession,
+} from '@/lib/heartRateSessionApi'
 
 const HEART_RATE_STATS_FLUSH_MS = 250
+const HEART_RATE_CHECKPOINT_MS = 15_000
 
 type Gender = 'M' | 'F'
 
@@ -50,8 +69,6 @@ interface CohortSelection {
 }
 
 interface MeasurementSnapshot extends CohortSelection {
-  calendarYear: number
-  month: number
   students: StudentRow[]
   mappings: HeartRateDeviceMapping[]
 }
@@ -93,21 +110,33 @@ export default function HeartRatePage() {
   const [error, setError] = useState<string | null>(null)
   const [mappings, setMappings] = useState<HeartRateDeviceMapping[]>([])
   const [mappingsLoading, setMappingsLoading] = useState(true)
-  const [liveStats, setLiveStats] = useState<HeartRateStatsByStudentNumber>({})
+  const [liveMeasurement, setLiveMeasurement] = useState<HeartRateMeasurementView | null>(null)
+  const [completedMinutePoints, setCompletedMinutePoints] = useState<Record<number, CollectedHeartRateMinutePoint[]>>({})
+  const [activeSession, setActiveSession] = useState<HeartRateSessionPayload | null>(null)
   const [isLiveView, setIsLiveView] = useState(false)
+  const [isStartingMeasurement, setIsStartingMeasurement] = useState(false)
+  const [isStoppingMeasurement, setIsStoppingMeasurement] = useState(false)
   const [showSaveModal, setShowSaveModal] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [checkpointWarning, setCheckpointWarning] = useState<string | null>(null)
   const [measurementSnapshot, setMeasurementSnapshot] = useState<MeasurementSnapshot | null>(null)
   const mappingsRef = useRef<HeartRateDeviceMapping[]>([])
   const measurementSnapshotRef = useRef<MeasurementSnapshot | null>(null)
+  const activeSessionRef = useRef<HeartRateSessionPayload | null>(null)
   const studentFetchGenerationRef = useRef(0)
   const collectorRef = useRef<ReturnType<typeof createHeartRateStatsCollector> | null>(null)
   if (collectorRef.current === null) collectorRef.current = createHeartRateStatsCollector()
   const collector = collectorRef.current
-  const finalStatsRef = useRef<HeartRateStatsByStudentNumber | null>(null)
+  const finalMeasurementRef = useRef<HeartRateMeasurementView | null>(null)
   const flushedRevisionRef = useRef(0)
+  const completedMinuteCountRef = useRef(0)
   const statsFlushTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const checkpointTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const checkpointInFlightRef = useRef<Promise<void> | null>(null)
+  const checkpointAckRevisionRef = useRef(0)
+  const sessionStopSyncedRef = useRef(false)
+  const startInProgressRef = useRef(false)
   const stopInProgressRef = useRef(false)
   const mountedRef = useRef(true)
   const measurementButtonRef = useRef<HTMLButtonElement | null>(null)
@@ -255,16 +284,10 @@ export default function HeartRatePage() {
     statsFlushTimerRef.current = null
   }, [])
 
-  const startStatsFlushTimer = useCallback(() => {
-    clearStatsFlushTimer()
-    statsFlushTimerRef.current = setInterval(() => {
-      const revision = collector.revision()
-      if (revision === flushedRevisionRef.current) return
-
-      flushedRevisionRef.current = revision
-      setLiveStats(collector.snapshot())
-    }, HEART_RATE_STATS_FLUSH_MS)
-  }, [clearStatsFlushTimer, collector])
+  const clearCheckpointTimer = useCallback(() => {
+    if (checkpointTimerRef.current) clearInterval(checkpointTimerRef.current)
+    checkpointTimerRef.current = null
+  }, [])
 
   const handleHeartRateEvent = useCallback((event: GatewayHeartRateEvent, receivedAt: number) => {
     const studentNumber = findMappedStudentNumber(event, mappingsRef.current)
@@ -275,18 +298,96 @@ export default function HeartRatePage() {
 
   const serialSession = useWebSerialHeartRate(handleHeartRateEvent)
 
+  const startStatsFlushTimer = useCallback(() => {
+    clearStatsFlushTimer()
+    statsFlushTimerRef.current = setInterval(() => {
+      collector.updateTransportQuality(serialSession.transportQuality())
+      const view = collector.advance(Date.now())
+      if (view.revision === flushedRevisionRef.current) return
+
+      flushedRevisionRef.current = view.revision
+      setLiveMeasurement(view)
+      if (view.completedMinuteCount !== completedMinuteCountRef.current) {
+        completedMinuteCountRef.current = view.completedMinuteCount
+        setCompletedMinutePoints(Object.fromEntries(
+          Object.entries(view.minutePointsByStudentNumber).map(([studentNumber, points]) => [
+            Number(studentNumber),
+            points.filter((point) => !point.isPartial),
+          ]),
+        ))
+      }
+    }, HEART_RATE_STATS_FLUSH_MS)
+  }, [clearStatsFlushTimer, collector, serialSession])
+
+  const flushCheckpoint = useCallback((): Promise<void> => {
+    if (checkpointInFlightRef.current) return checkpointInFlightRef.current
+
+    const operation = (async () => {
+      const sessionPayload = activeSessionRef.current
+      if (!sessionPayload) return
+
+      try {
+        collector.updateTransportQuality(serialSession.transportQuality())
+        const checkpoint = collector.checkpoint(checkpointAckRevisionRef.current, Date.now())
+        if (checkpoint.points.length === 0) return
+
+        const participantIds = buildHeartRateParticipantIndex(sessionPayload.participants)
+        const points = serializeCollectedHeartRatePoints(
+          checkpoint.points.reduce<Record<number, typeof checkpoint.points>>((grouped, point) => {
+            grouped[point.studentNumber] ??= []
+            grouped[point.studentNumber].push(point)
+            return grouped
+          }, {}),
+          participantIds,
+        )
+        const transportQuality = serializeHeartRateTransportQuality(checkpoint.transportQuality)
+
+        for (const chunk of splitHeartRateCheckpointPoints(points)) {
+          await checkpointHeartRateSession(sessionPayload.session.id, chunk, transportQuality)
+        }
+        checkpointAckRevisionRef.current = checkpoint.revision
+        if (mountedRef.current) setCheckpointWarning(null)
+      } catch (checkpointError) {
+        if (mountedRef.current) {
+          const detail = checkpointError instanceof Error ? checkpointError.message : String(checkpointError)
+          setCheckpointWarning(`측정 데이터의 서버 동기화가 지연되고 있습니다. 자동으로 다시 시도합니다. (${detail})`)
+        }
+        throw checkpointError
+      }
+    })()
+
+    checkpointInFlightRef.current = operation
+    void operation.finally(() => {
+      if (checkpointInFlightRef.current === operation) checkpointInFlightRef.current = null
+    }).catch(() => undefined)
+    return operation
+  }, [collector, serialSession])
+
+  const startCheckpointTimer = useCallback(() => {
+    clearCheckpointTimer()
+    checkpointTimerRef.current = setInterval(() => {
+      void flushCheckpoint().catch(() => undefined)
+    }, HEART_RATE_CHECKPOINT_MS)
+  }, [clearCheckpointTimer, flushCheckpoint])
+
   useEffect(() => {
     mountedRef.current = true
     return () => {
       mountedRef.current = false
       clearStatsFlushTimer()
+      clearCheckpointTimer()
       collector.reset()
-      finalStatsRef.current = null
+      finalMeasurementRef.current = null
       measurementSnapshotRef.current = null
+      activeSessionRef.current = null
       flushedRevisionRef.current = 0
+      completedMinuteCountRef.current = 0
+      checkpointAckRevisionRef.current = 0
+      sessionStopSyncedRef.current = false
+      startInProgressRef.current = false
       stopInProgressRef.current = false
     }
-  }, [clearStatsFlushTimer, collector])
+  }, [clearCheckpointTimer, clearStatsFlushTimer, collector])
 
   useEffect(() => {
     if (!showSaveModal) return
@@ -322,7 +423,35 @@ export default function HeartRatePage() {
     }
   }, [showSaveModal])
 
+  const resetMeasurementState = useCallback(() => {
+    clearStatsFlushTimer()
+    clearCheckpointTimer()
+    collector.reset()
+    finalMeasurementRef.current = null
+    flushedRevisionRef.current = 0
+    completedMinuteCountRef.current = 0
+    checkpointAckRevisionRef.current = 0
+    checkpointInFlightRef.current = null
+    sessionStopSyncedRef.current = false
+    startInProgressRef.current = false
+    stopInProgressRef.current = false
+    activeSessionRef.current = null
+    measurementSnapshotRef.current = null
+    mappingsRef.current = mappings
+    setShowSaveModal(false)
+    setIsLiveView(false)
+    setIsStartingMeasurement(false)
+    setIsStoppingMeasurement(false)
+    setIsSaving(false)
+    setLiveMeasurement(null)
+    setCompletedMinutePoints({})
+    setActiveSession(null)
+    setMeasurementSnapshot(null)
+    setCheckpointWarning(null)
+  }, [clearCheckpointTimer, clearStatsFlushTimer, collector, mappings])
+
   const handleStartMeasurement = () => {
+    if (startInProgressRef.current) return
     setError(null)
 
     if (studentsLoading || loadedSelectionKey !== selectedCohortKey) {
@@ -343,92 +472,210 @@ export default function HeartRatePage() {
       setError(`디바이스 설정 > Heart Fit 설정을 확인해 주세요. ${mappingValidation.error}`)
       return
     }
-    const nonEmptyMappings = mappingValidation.mappings.filter((mapping) => mapping.device_id !== '')
+    const studentNumbers = new Set(students.map((student) => student.student_no))
+    const activeMappings = mappingValidation.mappings.map((mapping) => (
+      studentNumbers.has(mapping.student_no) ? { ...mapping } : { ...mapping, device_id: '' }
+    ))
+    const nonEmptyMappings = activeMappings.filter((mapping) => mapping.device_id !== '')
     if (nonEmptyMappings.length === 0) {
       setError('배정된 심박계가 없습니다. 디바이스 설정 > Heart Fit 설정에서 측정 슬롯에 7자리 심박계 ID를 먼저 배정해 주세요.')
       return
     }
 
-    const currentMonth = new Date().getMonth() + 1
     const snapshot: MeasurementSnapshot = {
       ...selectedCohort,
-      calendarYear: currentMonth <= 2 ? selectedCohort.year + 1 : selectedCohort.year,
-      month: currentMonth,
       students: students.map((student) => ({ ...student })),
-      mappings: mappingValidation.mappings.map((mapping) => ({ ...mapping })),
+      mappings: activeMappings,
     }
     measurementSnapshotRef.current = snapshot
     setMeasurementSnapshot(snapshot)
     mappingsRef.current = snapshot.mappings
-    collector.begin()
-    finalStatsRef.current = null
+    activeSessionRef.current = null
+    finalMeasurementRef.current = null
     flushedRevisionRef.current = 0
-    setLiveStats({})
-    startStatsFlushTimer()
+    completedMinuteCountRef.current = 0
+    checkpointAckRevisionRef.current = 0
+    sessionStopSyncedRef.current = false
+    startInProgressRef.current = true
+    setLiveMeasurement(null)
+    setCompletedMinutePoints({})
+    setActiveSession(null)
     setSaveError(null)
+    setCheckpointWarning(null)
+    setIsStartingMeasurement(true)
     setIsLiveView(true)
-    void serialSession.start()
+
+    const createdSessionBox: { current: HeartRateSessionPayload | null } = { current: null }
+    let beforeRunError: unknown = null
+    const clientRequestId = crypto.randomUUID()
+
+    // Web Serial 포트 선택의 클릭 권한을 보존하기 위해 이 Promise를 클릭 핸들러 안에서 즉시 시작한다.
+    const startPromise = serialSession.start({
+      beforeRunStart: async () => {
+        try {
+          const createdSession = await startHeartRateSession({
+            client_request_id: clientRequestId,
+            academic_year: snapshot.year,
+            grade: snapshot.grade,
+            class_no: snapshot.classNo,
+          })
+          createdSessionBox.current = createdSession
+          assertHeartRateParticipantSnapshot(snapshot.students, createdSession.participants)
+
+          const participantByStudentNumber = new Map(
+            createdSession.participants.map((participant) => [participant.student_no, participant]),
+          )
+          const authoritativeSnapshot: MeasurementSnapshot = {
+            ...snapshot,
+            students: snapshot.students.map((student) => ({
+              ...student,
+              name: participantByStudentNumber.get(student.student_no)?.name ?? student.name,
+            })),
+          }
+          measurementSnapshotRef.current = authoritativeSnapshot
+          activeSessionRef.current = createdSession
+          if (mountedRef.current) {
+            setMeasurementSnapshot(authoritativeSnapshot)
+            setActiveSession(createdSession)
+          }
+        } catch (startSessionError) {
+          beforeRunError = startSessionError
+          throw startSessionError
+        }
+      },
+    })
+
+    void (async () => {
+      try {
+        const run = await startPromise
+        if (!run) {
+          throw beforeRunError ?? new Error('USB 연결에 실패했습니다. 장치를 확인한 뒤 다시 시작해 주세요.')
+        }
+        if (!mountedRef.current) throw new Error('화면 이동으로 측정 시작이 취소되었습니다.')
+        const createdSession = createdSessionBox.current
+        if (!createdSession) throw new Error('측정 세션이 준비되지 않았습니다.')
+
+        collector.begin({
+          startedAt: run.startedAt,
+          studentNumbers: nonEmptyMappings.map((mapping) => mapping.student_no),
+        })
+        const initialView = collector.measurementSnapshot(run.startedAt)
+        flushedRevisionRef.current = initialView.revision
+        setLiveMeasurement(initialView)
+
+        const stabilizedSession = await stabilizeHeartRateSession(
+          createdSession.session.id,
+          run.runId,
+          new Date(run.startedAt).toISOString(),
+        )
+        activeSessionRef.current = stabilizedSession
+        setActiveSession(stabilizedSession)
+        startStatsFlushTimer()
+        startCheckpointTimer()
+      } catch (startError) {
+        clearStatsFlushTimer()
+        clearCheckpointTimer()
+        collector.reset()
+        try { await serialSession.stop() } catch { }
+
+        let cleanupError: unknown = null
+        const sessionToDiscard = createdSessionBox.current
+        if (sessionToDiscard) {
+          try {
+            await discardHeartRateSession(sessionToDiscard.session.id)
+          } catch (discardError) {
+            cleanupError = discardError
+          }
+        }
+
+        if (mountedRef.current) {
+          resetMeasurementState()
+          const detail = startError instanceof Error ? startError.message : String(startError)
+          const cleanupDetail = cleanupError instanceof Error ? cleanupError.message : cleanupError ? String(cleanupError) : null
+          setError(cleanupDetail
+            ? `${detail} 생성된 측정 세션 정리에도 실패했습니다. (${cleanupDetail})`
+            : detail)
+        }
+      } finally {
+        startInProgressRef.current = false
+        if (mountedRef.current) setIsStartingMeasurement(false)
+      }
+    })()
   }
+
+  const syncStoppedMeasurement = useCallback(async () => {
+    if (sessionStopSyncedRef.current) return
+    const sessionPayload = activeSessionRef.current
+    if (!sessionPayload || !finalMeasurementRef.current) throw new Error('종료할 측정 세션이 없습니다.')
+
+    // freeze 이후 dirty absolute point를 먼저 모두 ACK하면 수업 길이와 무관하게
+    // stop API의 3,600-point snapshot 상한을 사용하지 않고 안전하게 상태를 전환할 수 있다.
+    await flushCheckpoint()
+    const finalMeasurement = finalMeasurementRef.current
+    if (!finalMeasurement) throw new Error('종료할 측정 데이터가 없습니다.')
+    const stoppedSession = await stopHeartRateSession(
+      sessionPayload.session.id,
+      [],
+      serializeHeartRateTransportQuality(finalMeasurement.transportQuality),
+    )
+    activeSessionRef.current = stoppedSession
+    sessionStopSyncedRef.current = true
+    if (mountedRef.current) {
+      setActiveSession(stoppedSession)
+      setCheckpointWarning(null)
+    }
+  }, [flushCheckpoint])
 
   const handleStopMeasurement = async () => {
     if (stopInProgressRef.current) return
     stopInProgressRef.current = true
+    setIsStoppingMeasurement(true)
 
-    const finalStats = collector.freeze()
     clearStatsFlushTimer()
-    finalStatsRef.current = finalStats
-    flushedRevisionRef.current = collector.revision()
-    setLiveStats(finalStats)
+    clearCheckpointTimer()
+    collector.updateTransportQuality(serialSession.transportQuality())
+    const finalMeasurement = collector.freezeMeasurement(Date.now())
+    finalMeasurementRef.current = finalMeasurement
+    flushedRevisionRef.current = finalMeasurement.revision
+    setLiveMeasurement(finalMeasurement)
 
     try {
+      try { await checkpointInFlightRef.current } catch { }
       await serialSession.stop()
+      collector.updateTransportQuality(serialSession.transportQuality())
+      const stoppedView = collector.measurementSnapshot()
+      finalMeasurementRef.current = stoppedView
+      setLiveMeasurement(stoppedView)
+      try {
+        await syncStoppedMeasurement()
+        if (mountedRef.current) setSaveError(null)
+      } catch (stopSyncError) {
+        if (mountedRef.current) {
+          const detail = stopSyncError instanceof Error ? stopSyncError.message : String(stopSyncError)
+          setSaveError(`측정은 종료되었지만 서버 동기화가 완료되지 않았습니다. 저장하면 다시 시도합니다. (${detail})`)
+        }
+      }
     } finally {
       if (document.fullscreenElement && typeof document.exitFullscreen === 'function') {
         try { await document.exitFullscreen() } catch { }
       }
       if (mountedRef.current) {
-        setSaveError(null)
         setShowSaveModal(true)
+        setIsStoppingMeasurement(false)
       }
       stopInProgressRef.current = false
     }
   }
 
-  const returnToRecords = () => {
-    clearStatsFlushTimer()
-    collector.reset()
-    finalStatsRef.current = null
-    flushedRevisionRef.current = 0
-    stopInProgressRef.current = false
-    setShowSaveModal(false)
-    setIsLiveView(false)
-    setLiveStats({})
-    measurementSnapshotRef.current = null
-    setMeasurementSnapshot(null)
-  }
-
   const saveMeasurement = async () => {
-    const finalStats = finalStatsRef.current
+    const finalMeasurement = finalMeasurementRef.current
     const snapshot = measurementSnapshotRef.current
-    if (!snapshot || !finalStats) return
+    const sessionPayload = activeSessionRef.current
+    if (!snapshot || !finalMeasurement || !sessionPayload) return
 
-    const results = snapshot.students
-      .filter((student) => student.id && finalStats[student.student_no]?.sampleCount > 0)
-      .map((student) => {
-        const stats = finalStats[student.student_no]
-        return {
-          student_id: student.id,
-          student_no: student.student_no,
-          year: snapshot.calendarYear,
-          month: snapshot.month,
-          avg_bpm: averageHeartRate(stats),
-          max_bpm: stats.maxBpm,
-          min_bpm: stats.minBpm,
-          record_count: 1,
-        }
-      })
-
-    if (results.length === 0) {
+    const pointCount = Object.values(finalMeasurement.minutePointsByStudentNumber)
+      .reduce((total, points) => total + points.length, 0)
+    if (pointCount === 0) {
       setSaveError('저장할 심박 측정 데이터가 없습니다. 저장하지 않고 종료할 수 있습니다.')
       return
     }
@@ -436,19 +683,8 @@ export default function HeartRatePage() {
     setIsSaving(true)
     setSaveError(null)
     try {
-      const response = await fetch('/api/school/heart-rate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          results,
-          grade: snapshot.grade,
-          class_no: snapshot.classNo,
-          year: snapshot.year,
-        }),
-      })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.error || '측정 데이터 저장 실패')
+      await syncStoppedMeasurement()
+      await finalizeHeartRateSession(sessionPayload.session.id)
 
       try {
         setRows(await requestHeartRateRows(snapshot))
@@ -456,13 +692,56 @@ export default function HeartRatePage() {
         setRows(emptyHeartRateRows(snapshot.students))
         setError(refreshError instanceof Error ? refreshError.message : String(refreshError))
       }
-      returnToRecords()
+      resetMeasurementState()
     } catch (saveRequestError) {
       setSaveError(saveRequestError instanceof Error ? saveRequestError.message : String(saveRequestError))
     } finally {
       setIsSaving(false)
     }
   }
+
+  const discardMeasurement = async () => {
+    const sessionPayload = activeSessionRef.current
+    if (!sessionPayload) return
+
+    setIsSaving(true)
+    setSaveError(null)
+    try {
+      await discardHeartRateSession(sessionPayload.session.id)
+      resetMeasurementState()
+    } catch (discardError) {
+      setSaveError(discardError instanceof Error ? discardError.message : String(discardError))
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const participantPresentationByStudentNumber = useMemo(() => {
+    const presentation: Record<number, {
+      ageYears: number | null
+      estimatedHrMax: number | null
+      isWarming: boolean
+    }> = {}
+
+    for (const mapping of measurementSnapshot?.mappings ?? []) {
+      if (mapping.device_id !== '') {
+        presentation[mapping.student_no] = {
+          ageYears: null,
+          estimatedHrMax: null,
+          isWarming: true,
+        }
+      }
+    }
+    for (const participant of activeSession?.participants ?? []) {
+      const phase = liveMeasurement?.sensorStatesByStudentNumber[participant.student_no]
+      presentation[participant.student_no] = {
+        ageYears: participant.age_years,
+        estimatedHrMax: participant.predicted_max_bpm,
+        isWarming: phase === undefined || phase === 'connecting' || phase === 'stabilizing',
+      }
+    }
+    return presentation
+  }, [activeSession, liveMeasurement, measurementSnapshot])
 
   const monthOrderIdx = useMemo(() => [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 0, 1], [])
   const months = useMemo(() => monthOrderIdx.map((idx) => `${idx + 1}월`), [monthOrderIdx])
@@ -554,7 +833,9 @@ export default function HeartRatePage() {
                 disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none
               `}
               disabled={
-                serialSession.state === 'connecting'
+                isStartingMeasurement
+                || isStoppingMeasurement
+                || serialSession.state === 'connecting'
                 || serialSession.state === 'handshaking'
                 || serialSession.state === 'stopping'
                 || (!isLiveView && (studentsLoading || loadedSelectionKey !== selectedCohortKey || mappingsLoading))
@@ -570,12 +851,12 @@ export default function HeartRatePage() {
                   </div>
                   심박수 측정 시작하기
                 </>
-              ) : serialSession.state === 'connecting' || serialSession.state === 'handshaking' ? (
+              ) : isStartingMeasurement || serialSession.state === 'connecting' || serialSession.state === 'handshaking' ? (
                 <>
                   <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
-                  USB 연결 중...
+                  측정 준비 중...
                 </>
-              ) : serialSession.state === 'stopping' ? (
+              ) : isStoppingMeasurement || serialSession.state === 'stopping' ? (
                 <>측정 종료 중...</>
               ) : (
                 <>
@@ -594,17 +875,26 @@ export default function HeartRatePage() {
         </div>
       )}
 
+      {checkpointWarning && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800" role="status">
+          {checkpointWarning}
+        </div>
+      )}
+
       {isLiveView ? (
         <LiveHeartRateBoard
           students={measurementSnapshot?.students ?? []}
           mappings={measurementSnapshot?.mappings ?? []}
-          statsByStudentNumber={liveStats}
+          statsByStudentNumber={liveMeasurement?.statsByStudentNumber ?? {}}
           connectionState={serialSession.state}
           statusText={serialSession.statusText}
           connectionError={serialSession.error}
-          onRetry={() => { void serialSession.start() }}
+          onRetry={() => { void handleStopMeasurement() }}
+          retryLabel="측정을 종료하고 저장 선택"
           onStop={() => { void handleStopMeasurement() }}
-          stopDisabled={serialSession.state !== 'running'}
+          stopDisabled={isStartingMeasurement || isStoppingMeasurement}
+          minutePointsByStudentNumber={completedMinutePoints}
+          participantPresentationByStudentNumber={participantPresentationByStudentNumber}
         />
       ) : (
         <div className="bg-white/95 rounded-lg shadow p-6 text-gray-900">
@@ -690,7 +980,7 @@ export default function HeartRatePage() {
             </div>
             <h3 id="save-heart-rate-title" className="text-center text-xl font-bold">측정 결과를 저장하시겠습니까?</h3>
             <p id="save-heart-rate-description" className="mt-2 text-center text-sm text-gray-500">
-              실제 심박 신호가 수신된 학생의 평균·최고·최저 심박수만 이번 달 기록에 반영됩니다.
+              이번 수업의 1분 평균 원본과 요약을 저장하고 월별 기록도 함께 갱신합니다.
             </p>
 
             {saveError && (
@@ -703,7 +993,7 @@ export default function HeartRatePage() {
               <button
                 ref={discardButtonRef}
                 type="button"
-                onClick={returnToRecords}
+                onClick={() => { void discardMeasurement() }}
                 disabled={isSaving}
                 className="rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm font-bold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
               >

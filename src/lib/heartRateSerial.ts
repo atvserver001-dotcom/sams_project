@@ -5,6 +5,9 @@ export const HEART_RATE_NDJSON_MAX_LINE_LENGTH = 2_048
 export const HEART_RATE_SERIAL_BAUD_RATE = 115_200
 export const HEART_RATE_GATEWAY_RX_LINE_MAX = 255
 export const HEART_RATE_GATEWAY_LEASE_MS = 5_000
+export const HEART_RATE_GATEWAY_HANDSHAKE_TIMEOUT_MS = 8_000
+export const HEART_RATE_SENSOR_MIN_BPM = 40
+export const HEART_RATE_SENSOR_MAX_BPM = 220
 
 const REQUIRED_GATEWAY_CAPABILITIES = [
   'cl830_a1_a2',
@@ -30,6 +33,17 @@ export interface GatewayHeartRateEvent extends GatewayMessage {
   battery_percent: number | null
   seq: number
   fresh: true
+  frame?: 'a1' | 'a2'
+  battery_raw?: number
+  generation?: number
+  uptime_ms?: number
+  rssi_dbm?: number
+  /** Browser-derived count of missing gateway event sequence numbers. */
+  transport_sequence_gap?: number
+  /** Browser-derived run-wide absolute diagnostics at this event. */
+  transport_received_event_count?: number
+  transport_sequence_gap_total?: number
+  transport_rejected_sequence_count?: number
 }
 
 export interface GatewayMessage {
@@ -52,6 +66,16 @@ export interface GatewayCapsMessage extends GatewayMessage {
   boot_id: string
   gateway_id: string
   capabilities: string[]
+  state: 'ready' | 'running'
+}
+
+export interface GatewayStatusMessage extends GatewayMessage {
+  kind: 'status'
+  boot_id: string
+  state: 'ready' | 'running'
+  run_id?: string
+  generation: number
+  lease_remaining_ms: number
 }
 
 export interface HeartRateDeviceMapping {
@@ -67,6 +91,14 @@ export interface LiveHeartRateStats {
   sampleCount: number
   batteryPercent: number | null
   lastReceivedAt: number
+  lastRssiDbm: number | null
+}
+
+export interface HeartRateTransportQuality {
+  receivedEventCount: number
+  sequenceGapCount: number
+  rejectedSequenceCount: number
+  lastEventAt: number | null
 }
 
 export type HeartRateSignalState = 'waiting' | 'fresh' | 'stale' | 'offline'
@@ -161,6 +193,23 @@ export function parseHeartRateEvent(message: GatewayMessage): GatewayHeartRateEv
     )) ||
     !isFiniteInteger(message.seq) ||
     message.seq <= 0 ||
+    !(message.frame === undefined || message.frame === 'a1' || message.frame === 'a2') ||
+    !(message.battery_raw === undefined || isFiniteInteger(message.battery_raw)) ||
+    !(message.generation === undefined || (isFiniteInteger(message.generation) && message.generation > 0)) ||
+    !(message.uptime_ms === undefined || (isFiniteInteger(message.uptime_ms) && message.uptime_ms >= 0)) ||
+    !(message.rssi_dbm === undefined || (isFiniteInteger(message.rssi_dbm) && message.rssi_dbm <= 0)) ||
+    !(message.transport_sequence_gap === undefined || (
+      isFiniteInteger(message.transport_sequence_gap) && message.transport_sequence_gap >= 0
+    )) ||
+    !(message.transport_received_event_count === undefined || (
+      isFiniteInteger(message.transport_received_event_count) && message.transport_received_event_count > 0
+    )) ||
+    !(message.transport_sequence_gap_total === undefined || (
+      isFiniteInteger(message.transport_sequence_gap_total) && message.transport_sequence_gap_total >= 0
+    )) ||
+    !(message.transport_rejected_sequence_count === undefined || (
+      isFiniteInteger(message.transport_rejected_sequence_count) && message.transport_rejected_sequence_count >= 0
+    )) ||
     message.fresh !== true
   ) {
     return null
@@ -189,21 +238,22 @@ export function parseHeartRateEvent(message: GatewayMessage): GatewayHeartRateEv
 
 export function isHeartRateEventForRun(
   event: GatewayHeartRateEvent,
-  session: { bootId: string; runId: string; lastSequence: number },
+  session: { bootId: string; runId: string; lastSequence: number; generation?: number },
 ) {
   return event.boot_id === session.bootId &&
     event.run_id === session.runId &&
+    (session.generation === undefined || event.generation === session.generation) &&
     event.seq > session.lastSequence
 }
 
-export function isExpectedGatewayCaps(message: GatewayMessage): message is GatewayCapsMessage {
+export function isExpectedGatewayIdentity(message: GatewayMessage): message is GatewayCapsMessage {
   const capabilities = message.capabilities
   if (
     message.v !== 1 ||
     message.kind !== 'caps' ||
     message.product !== HEART_RATE_GATEWAY_PRODUCT ||
     message.protocol !== 1 ||
-    message.state !== 'ready' ||
+    (message.state !== 'ready' && message.state !== 'running') ||
     message.baud !== HEART_RATE_SERIAL_BAUD_RATE ||
     message.rx_line_max !== HEART_RATE_GATEWAY_RX_LINE_MAX ||
     message.lease_default_ms !== HEART_RATE_GATEWAY_LEASE_MS ||
@@ -222,6 +272,36 @@ export function isExpectedGatewayCaps(message: GatewayMessage): message is Gatew
   return REQUIRED_GATEWAY_CAPABILITIES.every(
     (capability) => capabilities.includes(capability),
   )
+}
+
+/** Compatibility alias: validates gateway identity/capabilities, not run readiness. */
+export const isExpectedGatewayCaps = isExpectedGatewayIdentity
+
+export function isGatewayReadyCaps(message: GatewayMessage): message is GatewayCapsMessage {
+  return isExpectedGatewayIdentity(message) && message.state === 'ready'
+}
+
+export function isExpectedGatewayStatus(
+  message: GatewayMessage,
+  session: { bootId: string },
+): message is GatewayStatusMessage {
+  if (
+    message.v !== 1 ||
+    message.kind !== 'status' ||
+    message.boot_id !== session.bootId ||
+    (message.state !== 'ready' && message.state !== 'running') ||
+    !isFiniteInteger(message.generation) ||
+    message.generation < 0 ||
+    !isFiniteInteger(message.lease_remaining_ms) ||
+    message.lease_remaining_ms < 0 ||
+    message.lease_remaining_ms > HEART_RATE_GATEWAY_LEASE_MS
+  ) {
+    return false
+  }
+
+  return message.state === 'ready'
+    ? message.run_id === undefined && message.lease_remaining_ms === 0
+    : isNonEmptyString(message.run_id) && message.lease_remaining_ms > 0
 }
 
 export function isExpectedRunStartAck(
@@ -267,6 +347,7 @@ export function addHeartRateSample(
       sampleCount: 1,
       batteryPercent: event.battery_percent,
       lastReceivedAt: receivedAt,
+      lastRssiDbm: event.rssi_dbm ?? null,
     }
   }
 
@@ -276,8 +357,11 @@ export function addHeartRateSample(
     minBpm: Math.min(previous.minBpm, event.bpm),
     totalBpm: previous.totalBpm + event.bpm,
     sampleCount: previous.sampleCount + 1,
-    batteryPercent: event.battery_percent ?? previous.batteryPercent,
+    // The firmware deliberately emits null when a battery byte is invalid.
+    // Keeping an older percentage would make stale battery data look current.
+    batteryPercent: event.battery_percent,
     lastReceivedAt: receivedAt,
+    lastRssiDbm: event.rssi_dbm ?? null,
   }
 }
 

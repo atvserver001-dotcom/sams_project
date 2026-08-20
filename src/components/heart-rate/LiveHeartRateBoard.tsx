@@ -13,12 +13,24 @@ import {
   currentHeartRateForSignal,
   getHeartRateSignalState,
 } from '@/lib/heartRateSerial'
+import HeartRateBatteryIcon from './HeartRateBatteryIcon'
+import HeartRateMinuteChart, {
+  HeartRateBpmScale,
+  HeartRateMinutePoint,
+  calculateSharedBpmScale,
+} from './HeartRateMinuteChart'
 import { WebSerialSessionState } from './useWebSerialHeartRate'
 
 interface LiveBoardStudent {
   id: string
   student_no: number
   name: string
+}
+
+export interface HeartRateParticipantPresentation {
+  ageYears: number | null
+  estimatedHrMax: number | null
+  isWarming: boolean
 }
 
 interface LiveHeartRateBoardProps {
@@ -29,8 +41,12 @@ interface LiveHeartRateBoardProps {
   statusText: string
   connectionError: string | null
   onRetry: () => void
+  retryLabel?: string
   onStop: () => void
   stopDisabled: boolean
+  minutePointsByStudentNumber?: Record<number, HeartRateMinutePoint[]>
+  participantPresentationByStudentNumber?: Record<number, HeartRateParticipantPresentation>
+  sharedBpmScale?: HeartRateBpmScale
 }
 
 const signalPresentation = {
@@ -57,8 +73,12 @@ export default function LiveHeartRateBoard({
   statusText,
   connectionError,
   onRetry,
+  retryLabel = 'USB 다시 연결',
   onStop,
   stopDisabled,
+  minutePointsByStudentNumber = {},
+  participantPresentationByStudentNumber = {},
+  sharedBpmScale,
 }: LiveHeartRateBoardProps) {
   const [now, setNow] = useState(() => Date.now())
   const [isFullscreen, setIsFullscreen] = useState(false)
@@ -87,9 +107,18 @@ export default function LiveHeartRateBoard({
     () => new Set(mappings.filter((mapping) => mapping.device_id !== '').map((mapping) => mapping.student_no)),
     [mappings],
   )
-  const receivingCount = Object.values(statsByStudentNumber).filter(
-    (stats) => getHeartRateSignalState(stats, now) === 'fresh',
+  const receivingCount = Object.entries(statsByStudentNumber).filter(
+    ([studentNumber, stats]) => (
+      !participantPresentationByStudentNumber[Number(studentNumber)]?.isWarming &&
+      getHeartRateSignalState(stats, now) === 'fresh'
+    ),
   ).length
+  const bpmScale = useMemo(
+    () => sharedBpmScale ?? calculateSharedBpmScale(
+      Object.values(minutePointsByStudentNumber).flat(),
+    ),
+    [minutePointsByStudentNumber, sharedBpmScale],
+  )
   const connection = connectionPresentation[connectionState]
   const fullscreenControl = getFullscreenControlPresentation(isFullscreen)
 
@@ -131,6 +160,19 @@ export default function LiveHeartRateBoard({
             심박계 배정 {mappedNumbers.size}대 · 현재 수신 {receivingCount}대
           </p>
         </div>
+        {isFullscreen && (
+          <div
+            className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[10px] text-gray-600"
+            aria-label={`교육용 운동강도 참고 범례, 공통 세로축 ${bpmScale.min}에서 ${bpmScale.max} BPM`}
+          >
+            <span className="font-semibold text-gray-500">교육용 운동강도 참고</span>
+            <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-blue-500" />낮음</span>
+            <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-emerald-500" />중간</span>
+            <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-amber-500" />높음</span>
+            <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-rose-600" />최대 부근</span>
+            <span className="text-gray-400">축 {bpmScale.min}–{bpmScale.max} BPM</span>
+          </div>
+        )}
         <div className="flex flex-wrap items-center justify-end gap-2">
           <div className="flex items-center gap-2" aria-live="polite">
             <span className={`inline-flex items-center rounded-full px-3 py-1.5 text-xs font-bold ${connection.classes}`}>
@@ -200,7 +242,7 @@ export default function LiveHeartRateBoard({
             onClick={onRetry}
             className="rounded-lg bg-rose-600 px-4 py-2 text-xs font-bold text-white transition-colors hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-300"
           >
-            USB 다시 연결
+            {retryLabel}
           </button>
         </div>
       )}
@@ -215,13 +257,19 @@ export default function LiveHeartRateBoard({
           const hasMapping = mappedNumbers.has(studentNumber)
           const stats = statsByStudentNumber[studentNumber]
           const signalState = getHeartRateSignalState(stats, now)
-          const signal = signalPresentation[signalState]
-          const currentBpm = currentHeartRateForSignal(stats, signalState)
+          const participantPresentation = participantPresentationByStudentNumber[studentNumber]
+          const isWarming = hasMapping && participantPresentation?.isWarming === true
+          const signal = isWarming
+            ? { label: '신호 안정화 중', dot: 'bg-blue-400', text: 'text-blue-700' }
+            : signalPresentation[signalState]
+          const currentBpm = isWarming ? null : currentHeartRateForSignal(stats, signalState)
+          const displayStats = isWarming ? undefined : stats
+          const minutePoints = minutePointsByStudentNumber[studentNumber] ?? []
 
           return (
             <article
               key={studentNumber}
-              className={`${isFullscreen ? 'min-h-0 overflow-hidden p-2' : 'min-h-40 p-2.5'} rounded-lg bg-white shadow-sm transition-colors ${signalState === 'fresh' ? 'ring-2 ring-inset ring-emerald-300' : ''}`}
+              className={`${isFullscreen ? 'min-h-0 overflow-hidden p-1.5' : 'min-h-40 p-2.5'} rounded-lg bg-white shadow-sm transition-colors ${signalState === 'fresh' && !isWarming ? 'ring-2 ring-inset ring-emerald-300' : ''}`}
               aria-label={`${studentNumber}번 슬롯 ${student?.name ?? '학생'} 심박 현황`}
             >
               <div className="flex items-start justify-between gap-2">
@@ -233,39 +281,85 @@ export default function LiveHeartRateBoard({
                 </span>
               </div>
 
-              <div className={`${isFullscreen ? 'mt-1' : 'mt-4'} text-center`}>
-                <div className={`${isFullscreen ? 'text-2xl' : 'text-3xl'} font-black tracking-tight ${currentBpm ? 'text-indigo-600' : 'text-indigo-400'}`}>
-                  {currentBpm ?? '--'}
-                </div>
-                <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-widest text-gray-400">BPM</div>
-              </div>
+              {isFullscreen ? (
+                <>
+                  <div className="mt-0.5 flex h-7 items-center gap-2">
+                    <div className={`flex min-w-[3.25rem] items-baseline justify-center font-black tracking-tight ${currentBpm ? 'text-indigo-600' : 'text-indigo-400'}`}>
+                      {isWarming
+                        ? <span className="text-xs text-blue-600">연결 중</span>
+                        : <><span className="text-xl">{currentBpm ?? '--'}</span><span className="ml-0.5 text-[8px] text-gray-400">BPM</span></>}
+                    </div>
+                    <dl className="grid min-w-0 flex-1 grid-cols-3 gap-1 text-center leading-none">
+                      <div>
+                        <dt className="text-[8px] text-gray-400">최대</dt>
+                        <dd className="mt-1 text-[10px] font-bold text-gray-800">{displayStats?.maxBpm ?? '--'}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-[8px] text-gray-400">평균</dt>
+                        <dd className="mt-1 text-[10px] font-bold text-gray-800">
+                          {displayStats ? averageHeartRate(displayStats).toFixed(1) : '--'}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-[8px] text-gray-400">최저</dt>
+                        <dd className="mt-1 text-[10px] font-bold text-gray-800">{displayStats?.minBpm ?? '--'}</dd>
+                      </div>
+                    </dl>
+                  </div>
 
-              <dl className={`${isFullscreen ? 'mt-1 gap-1' : 'mt-3 gap-2'} grid grid-cols-3 text-center`}>
-                <div>
-                  <dt className="text-[10px] text-gray-400">최대</dt>
-                  <dd className="mt-0.5 text-xs font-bold text-gray-800">{stats?.maxBpm ?? '--'}</dd>
-                </div>
-                <div>
-                  <dt className="text-[10px] text-gray-400">평균</dt>
-                  <dd className="mt-0.5 text-xs font-bold text-gray-800">
-                    {stats ? averageHeartRate(stats).toFixed(1) : '--'}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-[10px] text-gray-400">최저</dt>
-                  <dd className="mt-0.5 text-xs font-bold text-gray-800">{stats?.minBpm ?? '--'}</dd>
-                </div>
-              </dl>
+                  <div className="mt-0.5 flex h-4 items-center justify-between gap-1 border-t border-gray-100 text-[9px]">
+                    <span className={`inline-flex min-w-0 items-center gap-1 truncate font-semibold ${hasMapping ? signal.text : 'text-gray-400'}`}>
+                      <span className={`h-1.5 w-1.5 rounded-full ${hasMapping ? signal.dot : 'bg-gray-300'}`} />
+                      {hasMapping ? signal.label : '심박계 ID 미등록'}
+                    </span>
+                    <HeartRateBatteryIcon percent={stats?.batteryPercent} stale={signalState !== 'fresh'} />
+                  </div>
 
-              <div className={`${isFullscreen ? 'mt-1 pt-1' : 'mt-3 pt-2'} flex items-center justify-between gap-1 border-t border-gray-100 text-[10px]`}>
-                <span className={`inline-flex min-w-0 items-center gap-1 truncate font-semibold ${hasMapping ? signal.text : 'text-gray-400'}`}>
-                  <span className={`h-1.5 w-1.5 rounded-full ${hasMapping ? signal.dot : 'bg-gray-300'}`} />
-                  {hasMapping ? signal.label : '심박계 ID 미등록'}
-                </span>
-                <span className="text-gray-400" aria-label={`배터리 ${stats?.batteryPercent ?? '정보 없음'}`}>
-                  배터리 {stats?.batteryPercent !== null && stats?.batteryPercent !== undefined ? `${stats.batteryPercent}%` : '--'}
-                </span>
-              </div>
+                  <div className="mt-px min-h-0 border-t border-gray-100 pt-px">
+                    <HeartRateMinuteChart
+                      points={minutePoints}
+                      ageYears={participantPresentation?.ageYears ?? null}
+                    estimatedHrMax={participantPresentation?.estimatedHrMax ?? null}
+                    scale={bpmScale}
+                      studentName={student?.name ?? `${studentNumber}번 학생`}
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="mt-4 text-center">
+                    <div className={`flex items-center justify-center text-3xl font-black tracking-tight ${currentBpm ? 'text-indigo-600' : 'text-indigo-400'}`}>
+                      {isWarming ? <span className="text-sm text-blue-600">연결 중</span> : currentBpm ?? '--'}
+                    </div>
+                    <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-widest text-gray-400">BPM</div>
+                  </div>
+
+                  <dl className="mt-3 grid grid-cols-3 gap-2 text-center">
+                    <div>
+                      <dt className="text-[10px] text-gray-400">최대</dt>
+                      <dd className="mt-0.5 text-xs font-bold text-gray-800">{displayStats?.maxBpm ?? '--'}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-[10px] text-gray-400">평균</dt>
+                      <dd className="mt-0.5 text-xs font-bold text-gray-800">
+                        {displayStats ? averageHeartRate(displayStats).toFixed(1) : '--'}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-[10px] text-gray-400">최저</dt>
+                      <dd className="mt-0.5 text-xs font-bold text-gray-800">{displayStats?.minBpm ?? '--'}</dd>
+                    </div>
+                  </dl>
+
+                  <div className="mt-3 flex items-center justify-between gap-1 border-t border-gray-100 pt-2 text-[10px]">
+                    <span className={`inline-flex min-w-0 items-center gap-1 truncate font-semibold ${hasMapping ? signal.text : 'text-gray-400'}`}>
+                      <span className={`h-1.5 w-1.5 rounded-full ${hasMapping ? signal.dot : 'bg-gray-300'}`} />
+                      {hasMapping ? signal.label : '심박계 ID 미등록'}
+                    </span>
+                    <HeartRateBatteryIcon percent={stats?.batteryPercent} stale={signalState !== 'fresh'} />
+                  </div>
+                </>
+              )}
             </article>
           )
         })}

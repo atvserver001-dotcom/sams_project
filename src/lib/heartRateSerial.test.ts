@@ -9,7 +9,9 @@ import {
   currentHeartRateForSignal,
   findMappedStudentNumber,
   getHeartRateSignalState,
+  isExpectedGatewayStatus,
   isExpectedGatewayCaps,
+  isGatewayReadyCaps,
   isExpectedRunStartAck,
   isHeartRateEventForRun,
   parseGatewayMessage,
@@ -91,6 +93,21 @@ describe('heart-rate Web Serial protocol', () => {
     expect(isHeartRateEventForRun(event, { bootId: 'other', runId: 'run-1', lastSequence: 0 })).toBe(false)
     expect(isHeartRateEventForRun(event, { bootId: 'boot-1', runId: 'other', lastSequence: 0 })).toBe(false)
     expect(isHeartRateEventForRun(event, { bootId: 'boot-1', runId: 'run-1', lastSequence: 1 })).toBe(false)
+    expect(isHeartRateEventForRun(
+      { ...event, generation: 7 },
+      { bootId: 'boot-1', runId: 'run-1', lastSequence: 0, generation: 7 },
+    )).toBe(true)
+    expect(isHeartRateEventForRun(
+      { ...event, generation: 6 },
+      { bootId: 'boot-1', runId: 'run-1', lastSequence: 0, generation: 7 },
+    )).toBe(false)
+  })
+
+  it('retains the wire protocol range so quality gating remains a collector concern', () => {
+    expect(parseHeartRateEvent({ ...event, bpm: 1 })).not.toBeNull()
+    expect(parseHeartRateEvent({ ...event, bpm: 255 })).not.toBeNull()
+    expect(parseHeartRateEvent({ ...event, bpm: 0 })).toBeNull()
+    expect(parseHeartRateEvent({ ...event, bpm: 256 })).toBeNull()
   })
 
   it('accepts only the expected gateway capabilities and run-start acknowledgement', () => {
@@ -110,6 +127,9 @@ describe('heart-rate Web Serial protocol', () => {
       capabilities: ['cl830_a1_a2', 'run_gate', 'heartbeat_lease', 'fresh_event_sequence'],
     }
     expect(isExpectedGatewayCaps(caps)).toBe(true)
+    expect(isGatewayReadyCaps(caps)).toBe(true)
+    expect(isExpectedGatewayCaps({ ...caps, state: 'running' })).toBe(true)
+    expect(isGatewayReadyCaps({ ...caps, state: 'running' })).toBe(false)
     expect(isExpectedGatewayCaps({ ...caps, protocol: 2 })).toBe(false)
     expect(isExpectedGatewayCaps({ ...caps, capabilities: ['run_gate'] })).toBe(false)
 
@@ -126,6 +146,24 @@ describe('heart-rate Web Serial protocol', () => {
     expect(isExpectedRunStartAck(ack, { bootId: 'boot-1', runId: 'run-1' })).toBe(true)
     expect(isExpectedRunStartAck({ ...ack, boot_id: 'other' }, { bootId: 'boot-1', runId: 'run-1' })).toBe(false)
     expect(isExpectedRunStartAck({ ...ack, lease_remaining_ms: 0 }, { bootId: 'boot-1', runId: 'run-1' })).toBe(false)
+
+    expect(isExpectedGatewayStatus({
+      v: 1,
+      kind: 'status',
+      boot_id: 'boot-1',
+      state: 'running',
+      run_id: 'old-run',
+      generation: 2,
+      lease_remaining_ms: 2500,
+    }, { bootId: 'boot-1' })).toBe(true)
+    expect(isExpectedGatewayStatus({
+      v: 1,
+      kind: 'status',
+      boot_id: 'boot-1',
+      state: 'ready',
+      generation: 2,
+      lease_remaining_ms: 0,
+    }, { bootId: 'boot-1' })).toBe(true)
   })
 
   it('aggregates samples and applies fresh, stale, and offline thresholds', () => {
@@ -138,7 +176,7 @@ describe('heart-rate Web Serial protocol', () => {
       minBpm: 92,
       totalBpm: 200,
       sampleCount: 2,
-      batteryPercent: 81,
+      batteryPercent: null,
     })
     expect(averageHeartRate(second)).toBe(100)
     expect(getHeartRateSignalState(second, 4_000)).toBe('fresh')

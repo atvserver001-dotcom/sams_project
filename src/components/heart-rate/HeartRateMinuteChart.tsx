@@ -5,7 +5,6 @@ import {
   BarElement,
   CategoryScale,
   Chart as ChartJS,
-  ChartOptions,
   LinearScale,
   Plugin,
 } from 'chart.js'
@@ -15,6 +14,7 @@ import {
   HeartRateBpmScale,
   HeartRateMinutePoint,
   HeartRateVisualizationZone,
+  createHeartRateMinuteChartOptions,
   getHeartRateZone,
 } from './heartRateVisualization'
 
@@ -90,6 +90,7 @@ function HeartRateMinuteChart({
   scale,
   studentName,
 }: HeartRateMinuteChartProps) {
+  const { min: scaleMin, max: scaleMax } = scale
   const chartModel = useMemo(() => {
     const validPoints = points
       .filter((point) => (
@@ -137,34 +138,10 @@ function HeartRateMinuteChart({
     }
   }, [estimatedHrMax, points])
 
-  const options = useMemo<ChartOptions<'bar'>>(() => ({
-    responsive: true,
-    maintainAspectRatio: false,
-    animation: false,
-    events: [],
-    normalized: true,
-    parsing: false,
-    devicePixelRatio: 1,
-    layout: { padding: { top: 5 } },
-    plugins: {
-      legend: { display: false },
-      tooltip: { enabled: false },
-    },
-    scales: {
-      x: {
-        display: false,
-        grid: { display: false },
-        border: { display: false },
-      },
-      y: {
-        display: false,
-        min: scale.min,
-        max: scale.max,
-        grid: { color: 'rgba(148, 163, 184, 0.16)', drawTicks: false },
-        border: { display: false },
-      },
-    },
-  }), [scale.max, scale.min])
+  const options = useMemo(
+    () => createHeartRateMinuteChartOptions({ min: scaleMin, max: scaleMax }),
+    [scaleMax, scaleMin],
+  )
 
   const latestPoint = points.length > 0
     ? points.reduce((latest, point) => point.minuteIndex > latest.minuteIndex ? point : latest)

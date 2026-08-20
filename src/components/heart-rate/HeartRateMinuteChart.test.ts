@@ -1,10 +1,42 @@
+import {
+  BarController,
+  BarElement,
+  CategoryScale,
+  Chart as ChartJS,
+  LinearScale,
+} from 'chart.js'
 import { describe, expect, it } from 'vitest'
 
 import {
   HeartRateMinutePoint,
   calculateSharedBpmScale,
+  createHeartRateMinuteChartOptions,
   getHeartRateZone,
 } from './heartRateVisualization'
+
+ChartJS.register(BarController, BarElement, CategoryScale, LinearScale)
+
+function createCanvasHarness() {
+  const canvas = {
+    width: 320,
+    height: 120,
+    getContext: () => context,
+  } as unknown as HTMLCanvasElement
+
+  const context = new Proxy({ canvas } as unknown as CanvasRenderingContext2D, {
+    get(target, property) {
+      if (property === 'measureText') {
+        return (text: string) => ({ width: String(text).length * 6 })
+      }
+      return Reflect.get(target, property) ?? (() => undefined)
+    },
+    set(target, property, value) {
+      return Reflect.set(target, property, value)
+    },
+  })
+
+  return canvas
+}
 
 const minutePoint = (
   averageBpm: number,
@@ -57,5 +89,26 @@ describe('calculateSharedBpmScale', () => {
       min: 40,
       max: 220,
     })
+  })
+})
+
+describe('HeartRateMinuteChart', () => {
+  it('측정 전 빈 40칸을 Chart.js 막대그래프로 예외 없이 생성한다', () => {
+    const labels = Array.from({ length: 40 }, (_, index) => String(index + 1))
+
+    const chart = new ChartJS(createCanvasHarness(), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          data: labels.map(() => null),
+          backgroundColor: labels.map(() => 'rgba(226, 232, 240, 0.45)'),
+        }],
+      },
+      options: createHeartRateMinuteChartOptions({ min: 60, max: 160 }),
+    })
+
+    expect(chart.getDatasetMeta(0).data).toHaveLength(40)
+    chart.destroy()
   })
 })

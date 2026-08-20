@@ -1,3 +1,5 @@
+import type { ChartOptions } from 'chart.js'
+
 import type { HeartRateMinutePoint as CollectorHeartRateMinutePoint } from '../../lib/heartRateCollector'
 import {
   HEART_RATE_SESSION_MAX_BPM,
@@ -21,6 +23,39 @@ export interface HeartRateBpmScale {
 export type HeartRateVisualizationZone = SessionHeartRateZone | 'neutral'
 
 export const DEFAULT_HEART_RATE_SCALE: HeartRateBpmScale = { min: 60, max: 160 }
+
+export function createHeartRateMinuteChartOptions(
+  scale: HeartRateBpmScale,
+): ChartOptions<'bar'> {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false,
+    events: [],
+    normalized: true,
+    devicePixelRatio: 1,
+    layout: { padding: { top: 5 } },
+    plugins: {
+      legend: { display: false },
+      tooltip: { enabled: false },
+    },
+    scales: {
+      x: {
+        display: false,
+        grid: { display: false },
+        border: { display: false },
+      },
+      y: {
+        display: false,
+        min: scale.min,
+        max: scale.max,
+        grid: { color: 'rgba(148, 163, 184, 0.16)', drawTicks: false },
+        border: { display: false },
+      },
+    },
+  }
+}
+
 export function getHeartRateBatteryLevel(
   percent: number | null | undefined,
 ): HeartRateBatteryLevel | null {

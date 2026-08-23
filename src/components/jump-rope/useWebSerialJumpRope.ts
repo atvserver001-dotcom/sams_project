@@ -19,9 +19,12 @@ import {
   isExpectedJumpRopeGatewayIdentity,
   isExpectedJumpRopeStatus,
   isJumpRopeEventForRun,
+  isJumpRopeUint32After,
   jumpRopeModeSetFields,
   normalizeJumpRopeTarget,
+  parseJumpRopeAckUptime,
   parseJumpRopeDeviceReady,
+  parseJumpRopeDeviceState,
   parseJumpRopeSnapshot,
 } from '../../lib/jumpRopeSerial'
 import { OperationGeneration } from '../../lib/operationGeneration'
@@ -32,8 +35,12 @@ export type WebSerialJumpRopeState =
   | 'connecting'
   | 'handshaking'
   | 'configuring'
+  | 'connected'
+  | 'reconnecting'
+  | 'starting'
   | 'running'
-  | 'stopping'
+  | 'finishing'
+  | 'disconnecting'
   | 'error'
 
 export interface JumpRopeStartConfig {
@@ -41,15 +48,20 @@ export interface JumpRopeStartConfig {
   target: number
 }
 
-export interface WebSerialJumpRopeRun {
+export interface WebSerialJumpRopeConnection {
   bootId: string
   gatewayId: string
   runId: string
   generation: number
-  startedAt: number
+  connectedAt: number
   device: JumpRopeDeviceReadyEvent
+}
+
+export interface WebSerialJumpRopeMeasurement {
   mode: JumpRopeMode
   target: number
+  startedAt: number
+  startUptimeMs: number
 }
 
 interface SerialPortInfo {
@@ -94,7 +106,8 @@ interface JumpRopeSessionStatus {
   state: WebSerialJumpRopeState
   statusText: string
   error: string | null
-  run: WebSerialJumpRopeRun | null
+  connection: WebSerialJumpRopeConnection | null
+  measurement: WebSerialJumpRopeMeasurement | null
 }
 
 type ConnectionFailureKind = 'cancelled' | 'permission' | 'busy' | 'wrong-device' | 'disconnected' | 'transient'
@@ -205,6 +218,7 @@ const isCachedIdentity = (value: unknown): value is JumpRopeCachedIdentity => {
 /** Exported for deterministic protocol tests; application code should use the hook below. */
 export class WebSerialJumpRopeClient {
   private readonly lifecycle = new OperationGeneration()
+  private readonly measurementLifecycle = new OperationGeneration()
   private readonly decoder = new JumpRopeNdjsonMessageDecoder()
   private readonly textDecoder = new TextDecoder()
   private readonly textEncoder = new TextEncoder()
@@ -223,7 +237,6 @@ export class WebSerialJumpRopeClient {
   private runGeneration = 0
   private lastSequence = 0
   private bufferedDeviceReadyEvents: JumpRopeDeviceReadyEvent[] = []
-  private bufferedSnapshots: JumpRopeSnapshotEvent[] = []
   private missedPongs = 0
   private pingBusy = false
   private pingAttempt = 0
@@ -232,11 +245,21 @@ export class WebSerialJumpRopeClient {
   private authorizedPorts: SerialPortLike[] = []
   private serialWithListeners: SerialApiLike | null = null
   private state: WebSerialJumpRopeState = 'idle'
-  private run: WebSerialJumpRopeRun | null = null
+  private connection: WebSerialJumpRopeConnection | null = null
+  private measurement: WebSerialJumpRopeMeasurement | null = null
   private activeConfig: JumpRopeStartConfig | null = null
   private deviceSessionStarted = false
-  private startPromise: Promise<WebSerialJumpRopeRun | null> | null = null
-  private stopPromise: Promise<void> | null = null
+  private measurementStartUptimeMs: number | null = null
+  private reconnectInterruptionMessage: string | null = null
+  private interruptedConfig: JumpRopeStartConfig | null = null
+  private reconnectEpoch = 0
+  private reconnectRecoveryEpoch = -1
+  private connectPromise: Promise<WebSerialJumpRopeConnection | null> | null = null
+  private startMeasurementPromise: Promise<WebSerialJumpRopeMeasurement | null> | null = null
+  private finishMeasurementPromise: Promise<void> | null = null
+  private disconnectPromise: Promise<void> | null = null
+  private reconnectRecoveryPromise: Promise<void> | null = null
+  private fatalTransportPromise: Promise<void> | null = null
   private disposePromise: Promise<void> | null = null
   private closePromise: Promise<void> | null = null
 
@@ -254,7 +277,7 @@ export class WebSerialJumpRopeClient {
     this.authorizedPorts = this.authorizedPorts.filter((candidate) => candidate !== port)
     if (this.port === port) {
       this.forcePickerNext = true
-      void this.failSession('USB 줄넘기 게이트웨이 연결이 끊어졌습니다.')
+      void this.failTransport('USB 줄넘기 게이트웨이 연결이 끊어졌습니다.')
     }
   }
 
@@ -279,29 +302,24 @@ export class WebSerialJumpRopeClient {
     }
   }
 
-  start(config: JumpRopeStartConfig) {
+  connect() {
     if (this.lifecycle.isDisposed()) return Promise.resolve(null)
-    if (this.startPromise) return this.startPromise
-    if (this.state === 'running') return Promise.resolve(this.run)
-    if (this.state === 'stopping') return Promise.resolve(null)
+    if (this.state === 'disconnecting') return Promise.resolve(null)
+    if (this.connectPromise) return this.connectPromise
+    if (this.connection) return Promise.resolve(this.connection)
 
-    const normalizedConfig = {
-      mode: config.mode,
-      target: normalizeJumpRopeTarget(config.mode, config.target),
-    }
     const operation = this.lifecycle.begin()
     this.resetRunState()
-    this.activeConfig = normalizedConfig
-    this.notify('connecting', 'USB 줄넘기 게이트웨이를 찾는 중입니다.', null, null)
+    this.notify('connecting', 'USB 줄넘기 게이트웨이를 찾는 중입니다.', null)
 
-    const promise = this.performStart(operation, normalizedConfig).finally(() => {
-      if (this.startPromise === promise) this.startPromise = null
+    const promise = this.performConnect(operation).finally(() => {
+      if (this.connectPromise === promise) this.connectPromise = null
     })
-    this.startPromise = promise
+    this.connectPromise = promise
     return promise
   }
 
-  private async performStart(operation: number, config: JumpRopeStartConfig) {
+  private async performConnect(operation: number) {
     try {
       const serial = this.getSerialApi()
       this.installSerialListeners(serial)
@@ -328,7 +346,7 @@ export class WebSerialJumpRopeClient {
       for (const port of ports) {
         this.assertCurrent(operation)
         try {
-          return await this.connectPort(port, operation, config, true)
+          return await this.connectPort(port, operation, true)
         } catch (error) {
           lastFailure = classifyConnectionFailure(error)
           if (lastFailure.kind === 'disconnected') this.removeAuthorizedPort(port)
@@ -350,7 +368,7 @@ export class WebSerialJumpRopeClient {
       await this.closeTransport()
       if (!this.lifecycle.isCurrent(operation)) return null
       const suffix = this.forcePickerNext ? ' 다시 시작하면 USB 포트를 다시 선택할 수 있습니다.' : ''
-      this.notify('error', 'USB 연결 실패', `${failure.message}${suffix}`, null)
+      this.notify('error', 'USB 연결 실패', `${failure.message}${suffix}`)
       return null
     }
   }
@@ -358,7 +376,6 @@ export class WebSerialJumpRopeClient {
   private async connectPort(
     port: SerialPortLike,
     operation: number,
-    config: JumpRopeStartConfig,
     retryPortOpen: boolean,
   ) {
     this.port = port
@@ -375,7 +392,7 @@ export class WebSerialJumpRopeClient {
       this.reader = port.readable.getReader()
       this.writer = port.writable.getWriter()
       this.readerLoop = this.readMessages()
-      this.notify('handshaking', 'ATV JR203 게이트웨이와 핸드셰이크 중입니다.', null, null)
+      this.notify('handshaking', 'ATV JR203 게이트웨이와 핸드셰이크 중입니다.', null)
 
       const deadline = Date.now() + this.timing.handshakeTimeoutMs
       const initialCaps = await this.waitForGatewayCaps(deadline, operation)
@@ -397,7 +414,6 @@ export class WebSerialJumpRopeClient {
           'configuring',
           '저장된 JR203을 찾지 못해 주변 장치를 한 번 다시 탐색합니다.',
           null,
-          null,
         )
         await this.stopCurrentRun()
         this.clearCachedIdentity(this.gatewayId)
@@ -412,7 +428,7 @@ export class WebSerialJumpRopeClient {
           name: device.name,
         }
         this.saveCachedIdentity(discoveredIdentity)
-        this.notify('configuring', 'JR203 신원을 고정하고 한 번 다시 연결하는 중입니다.', null, null)
+        this.notify('configuring', 'JR203 신원을 고정하고 한 번 다시 연결하는 중입니다.', null)
         await this.stopCurrentRun()
         this.assertCurrent(operation)
         device = await this.startConfiguredRun(operation, discoveredIdentity)
@@ -427,30 +443,16 @@ export class WebSerialJumpRopeClient {
         name: device.name,
       })
 
-      this.notify('configuring', 'JR203 시각과 측정 모드를 설정하는 중입니다.', null, null)
-      await this.sendControl('time_sync', { timestamp_s: Math.floor(Date.now() / 1_000) })
-      this.assertCurrent(operation)
-      if (config.mode !== 3) {
-        await this.sendControl('mode_set', jumpRopeModeSetFields(config.mode, config.target))
-        this.assertCurrent(operation)
-      }
-      await this.sendControl('session_start', { mode: config.mode, target: config.target })
-      this.assertCurrent(operation)
-      this.deviceSessionStarted = true
-
-      const metadata: WebSerialJumpRopeRun = {
+      const metadata: WebSerialJumpRopeConnection = {
         bootId: this.bootId,
         gatewayId: this.gatewayId,
         runId: this.runId,
         generation: this.runGeneration,
-        startedAt: Date.now(),
+        connectedAt: Date.now(),
         device,
-        mode: config.mode,
-        target: config.target,
       }
-      this.run = metadata
-      this.notify('running', 'USB 게이트웨이 연결됨 · JR203 줄넘기 측정 중', null, metadata)
-      this.flushBufferedSnapshots()
+      this.connection = metadata
+      this.notify('connected', 'JR203 연결됨 · 시작 신호 대기', null)
       return metadata
     } catch (error) {
       if (!this.lifecycle.isCurrent(operation)) {
@@ -523,7 +525,7 @@ export class WebSerialJumpRopeClient {
   ): Promise<JumpRopeGatewayCaps> {
     let caps = initialCaps
     while (caps.state !== 'ready') {
-      this.notify('handshaking', '이전 JR203 측정 세션을 정리하는 중입니다.', null, null)
+      this.notify('handshaking', '이전 JR203 연결 세션을 정리하는 중입니다.', null)
       if (caps.state === 'stopping') {
         if (Date.now() >= deadline) {
           throw new ConnectionFailure('transient', '이전 JR203 연결 정리 시간이 초과되었습니다.')
@@ -577,7 +579,6 @@ export class WebSerialJumpRopeClient {
     this.runGeneration = 0
     this.lastSequence = 0
     this.bufferedDeviceReadyEvents = []
-    this.bufferedSnapshots = []
     const currentRunId = this.runId
     let ack: JumpRopeGatewayMessage | null = null
     for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -607,10 +608,10 @@ export class WebSerialJumpRopeClient {
       ack.lease_remaining_ms <= 0 ||
       ack.lease_remaining_ms > JUMP_ROPE_GATEWAY_LEASE_MS
     ) {
-      throw new ConnectionFailure('transient', 'JR203 측정 세션 시작 응답이 올바르지 않습니다.')
+      throw new ConnectionFailure('transient', 'JR203 연결 세션 시작 응답이 올바르지 않습니다.')
     }
     this.runGeneration = ack.generation
-    this.notify('configuring', 'JR203 줄넘기를 탐색하고 GATT로 연결하는 중입니다.', null, null)
+    this.notify('configuring', 'JR203 줄넘기를 탐색하고 GATT로 연결하는 중입니다.', null)
     // 5초 lease는 BLE 탐색/연결 중에도 소진되므로 run_start ACK 직후부터 유지한다.
     this.startPingTimer()
     return this.waitForDeviceReady(operation)
@@ -661,29 +662,130 @@ export class WebSerialJumpRopeClient {
     )
   }
 
-  stop() {
-    if (this.lifecycle.isDisposed()) return this.disposePromise ?? Promise.resolve()
-    if (this.stopPromise) return this.stopPromise
-    if (this.state === 'idle') return Promise.resolve()
+  startMeasurement(config: JumpRopeStartConfig) {
+    if (this.lifecycle.isDisposed()) return Promise.resolve(null)
+    if (!this.connection || this.state !== 'connected') return Promise.resolve(null)
+    if (this.startMeasurementPromise) return this.startMeasurementPromise
 
-    const operation = this.lifecycle.begin()
-    this.notify('stopping', 'JR203 측정을 안전하게 종료하는 중입니다.', null, this.run)
-    this.clearPingTimer()
-    const promise = this.performStop(operation).finally(() => {
-      if (this.stopPromise === promise) this.stopPromise = null
+    const operation = this.measurementLifecycle.begin()
+    const normalizedConfig = {
+      mode: config.mode,
+      target: normalizeJumpRopeTarget(config.mode, config.target),
+    }
+    this.activeConfig = normalizedConfig
+    this.measurement = null
+    this.measurementStartUptimeMs = null
+    this.notify('starting', 'JR203에 시작 신호를 보내는 중입니다.', null)
+
+    const promise = this.performStartMeasurement(normalizedConfig, operation).finally(() => {
+      if (this.startMeasurementPromise === promise) this.startMeasurementPromise = null
     })
-    this.stopPromise = promise
+    this.startMeasurementPromise = promise
     return promise
   }
 
-  private async performStop(operation: number) {
+  private async performStartMeasurement(config: JumpRopeStartConfig, operation: number) {
     try {
+      await this.sendControl('time_sync', { timestamp_s: Math.floor(Date.now() / 1_000) })
+      if (!this.measurementLifecycle.isCurrent(operation) || this.state !== 'starting') return null
+      if (config.mode !== 3) {
+        await this.sendControl('mode_set', jumpRopeModeSetFields(config.mode, config.target))
+        if (!this.measurementLifecycle.isCurrent(operation) || this.state !== 'starting') return null
+      }
+      this.deviceSessionStarted = true
+      const ack = await this.sendControl('session_start', { mode: config.mode, target: config.target })
+      if (!this.measurementLifecycle.isCurrent(operation) || this.state !== 'starting') return null
+      const startUptimeMs = parseJumpRopeAckUptime(ack)
+      if (startUptimeMs === null) {
+        throw new ConnectionFailure('transient', 'JR203 시작 응답의 기준 시간이 올바르지 않습니다.')
+      }
+      const measurement: WebSerialJumpRopeMeasurement = {
+        mode: config.mode,
+        target: config.target,
+        startedAt: Date.now(),
+        startUptimeMs,
+      }
+      this.measurementStartUptimeMs = startUptimeMs
+      this.measurement = measurement
+      this.notify('running', 'JR203 줄넘기 측정 중', null)
+      return measurement
+    } catch (error) {
+      const failure = classifyConnectionFailure(error)
+      if (
+        this.measurementLifecycle.isCurrent(operation) &&
+        this.state !== 'disconnecting' &&
+        this.state !== 'reconnecting'
+      ) {
+        this.notify('error', '측정 시작 확인 실패', failure.message)
+      }
+      return null
+    }
+  }
+
+  finishMeasurement() {
+    if (this.lifecycle.isDisposed()) return this.disposePromise ?? Promise.resolve()
+    if (this.state !== 'running' || !this.activeConfig) return Promise.resolve()
+    if (this.finishMeasurementPromise) return this.finishMeasurementPromise
+
+    const config = this.activeConfig
+    const operation = this.measurementLifecycle.begin()
+    this.measurementStartUptimeMs = null
+    this.notify('finishing', 'JR203에 끝 신호를 보내는 중입니다.', null)
+    const promise = this.performFinishMeasurement(config, operation).finally(() => {
+      if (this.finishMeasurementPromise === promise) this.finishMeasurementPromise = null
+    })
+    this.finishMeasurementPromise = promise
+    return promise
+  }
+
+  private async performFinishMeasurement(config: JumpRopeStartConfig, operation: number) {
+    try {
+      await this.sendControl('session_stop', { mode: config.mode, target: config.target })
+      if (!this.measurementLifecycle.isCurrent(operation) || this.state !== 'finishing') return
+      this.deviceSessionStarted = false
+      this.activeConfig = null
+      this.measurement = null
+      this.notify('connected', 'JR203 연결 유지 중 · 다음 시작 신호 대기', null)
+    } catch (error) {
+      const failure = classifyConnectionFailure(error)
+      if (
+        this.measurementLifecycle.isCurrent(operation) &&
+        this.state !== 'disconnecting' &&
+        this.state !== 'reconnecting'
+      ) {
+        this.notify('error', '측정 종료 확인 실패', failure.message)
+      }
+    }
+  }
+
+  disconnect() {
+    if (this.lifecycle.isDisposed()) return this.disposePromise ?? Promise.resolve()
+    if (this.disconnectPromise) return this.disconnectPromise
+    if (this.state === 'idle' && !this.writer) return Promise.resolve()
+
+    const operation = this.lifecycle.begin()
+    this.measurementLifecycle.invalidate()
+    this.reconnectEpoch += 1
+    this.measurementStartUptimeMs = null
+    this.notify('disconnecting', 'JR203 연결을 안전하게 해제하는 중입니다.', null)
+    this.clearPingTimer()
+    const promise = this.performDisconnect(operation).finally(() => {
+      if (this.disconnectPromise === promise) this.disconnectPromise = null
+    })
+    this.disconnectPromise = promise
+    return promise
+  }
+
+  private async performDisconnect(operation: number) {
+    try {
+      if (this.startMeasurementPromise) await this.startMeasurementPromise
+      if (this.finishMeasurementPromise) await this.finishMeasurementPromise
+      if (this.reconnectRecoveryPromise) await this.reconnectRecoveryPromise
       await this.bestEffortStopRun()
     } finally {
       await this.closeTransport()
       if (this.lifecycle.isCurrent(operation)) {
-        this.activeConfig = null
-        this.notify('idle', '줄넘기 측정이 종료되었습니다.', null, null)
+        this.notify('idle', 'JR203 연결이 해제되었습니다.', null)
       }
     }
   }
@@ -709,9 +811,14 @@ export class WebSerialJumpRopeClient {
     this.runId = ''
     this.runGeneration = 0
     this.lastSequence = 0
-    this.run = null
+    this.connection = null
+    this.measurement = null
+    this.activeConfig = null
+    this.deviceSessionStarted = false
+    this.measurementStartUptimeMs = null
+    this.reconnectInterruptionMessage = null
+    this.interruptedConfig = null
     this.bufferedDeviceReadyEvents = []
-    this.bufferedSnapshots = []
   }
 
   private async requestRunStop(runId: string, generation: number, bootId: string) {
@@ -744,20 +851,37 @@ export class WebSerialJumpRopeClient {
 
   dispose() {
     if (this.disposePromise) return this.disposePromise
-    const activeStart = this.startPromise
-    const activeStop = this.stopPromise
+    const activeConnect = this.connectPromise
+    const activeMeasurementStart = this.startMeasurementPromise
+    const activeMeasurementFinish = this.finishMeasurementPromise
+    const activeDisconnect = this.disconnectPromise
+    const activeReconnectRecovery = this.reconnectRecoveryPromise
+    const activeFatalTransport = this.fatalTransportPromise
     this.lifecycle.dispose()
+    this.measurementLifecycle.dispose()
     this.removeSerialListeners()
     this.clearPingTimer()
     const promise = (async () => {
-      if (activeStop) {
-        try { await activeStop } catch { }
+      if (activeDisconnect) {
+        try { await activeDisconnect } catch { }
       } else {
+        if (activeMeasurementStart) {
+          try { await activeMeasurementStart } catch { }
+        }
+        if (activeMeasurementFinish) {
+          try { await activeMeasurementFinish } catch { }
+        }
+        if (activeReconnectRecovery) {
+          try { await activeReconnectRecovery } catch { }
+        }
+        if (activeFatalTransport) {
+          try { await activeFatalTransport } catch { }
+        }
         try { await this.bestEffortStopRun() } catch { }
       }
       await this.closeTransport()
-      if (activeStart) {
-        try { await activeStart } catch { }
+      if (activeConnect) {
+        try { await activeConnect } catch { }
         await this.closeTransport()
       }
     })()
@@ -817,14 +941,14 @@ export class WebSerialJumpRopeClient {
       if (!this.closing) {
         this.forcePickerNext = true
         if (this.port) this.removeAuthorizedPort(this.port)
-        void this.failSession('USB 줄넘기 게이트웨이 연결이 종료되었습니다.')
+        void this.failTransport('USB 줄넘기 게이트웨이 연결이 종료되었습니다.')
       }
     } catch (error) {
       if (!this.closing) {
         this.forcePickerNext = true
         if (this.port) this.removeAuthorizedPort(this.port)
         const failure = classifyConnectionFailure(error)
-        void this.failSession(`USB 데이터 수신 오류: ${failure.message}`)
+        void this.failTransport(`USB 데이터 수신 오류: ${failure.message}`)
       }
     } finally {
       if (this.reader === reader) this.reader = null
@@ -856,13 +980,33 @@ export class WebSerialJumpRopeClient {
     }
     if (this.lifecycle.isDisposed()) return
 
-    if (message.kind === 'status' && message.reason === 'lease_expired' && this.state === 'running') {
-      void this.failSession('USB 게이트웨이와의 연결 유지 신호가 끊겼습니다.')
+    if (
+      message.kind === 'status' &&
+      message.reason === 'lease_expired' &&
+      this.runId &&
+      !this.closing &&
+      message.boot_id === this.bootId &&
+      message.generation === this.runGeneration &&
+      (message.run_id === undefined || message.run_id === this.runId)
+    ) {
+      void this.failTransport('USB 게이트웨이와의 연결 유지 신호가 끊겼습니다.')
+      return
+    }
+
+    const deviceState = parseJumpRopeDeviceState(message)
+    if (deviceState) {
+      if (this.connection && this.isCurrentRunEnvelope(deviceState)) {
+        this.enterReconnecting(deviceState.state)
+      }
       return
     }
 
     const ready = parseJumpRopeDeviceReady(message)
     if (ready) {
+      if (this.state === 'reconnecting') {
+        if (this.isSameConnectedDevice(ready)) void this.completeReconnection(ready)
+        return
+      }
       const waiter = [...this.deviceReadyWaiters].find((candidate) => candidate.matches(ready))
       if (waiter) {
         clearTimeout(waiter.timeoutId)
@@ -877,35 +1021,141 @@ export class WebSerialJumpRopeClient {
 
     const snapshot = parseJumpRopeSnapshot(message)
     if (!snapshot) return
-    if (this.state === 'handshaking' || this.state === 'configuring') {
-      this.bufferedSnapshots.push(snapshot)
-      this.bufferedSnapshots = this.bufferedSnapshots.slice(-32)
-      return
-    }
-    if (this.state === 'running') this.acceptSnapshot(snapshot, Date.now())
-  }
-
-  private flushBufferedSnapshots() {
-    const snapshots = this.bufferedSnapshots
-      .filter((event) => (
-        event.boot_id === this.bootId &&
-        event.run_id === this.runId &&
-        event.generation === this.runGeneration
-      ))
-      .sort((left, right) => left.seq - right.seq)
-    this.bufferedSnapshots = []
-    for (const snapshot of snapshots) this.acceptSnapshot(snapshot, Date.now())
-  }
-
-  private acceptSnapshot(event: JumpRopeSnapshotEvent, receivedAt: number) {
-    if (!isJumpRopeEventForRun(event, {
+    if (!isJumpRopeEventForRun(snapshot, {
       bootId: this.bootId,
       runId: this.runId,
       generation: this.runGeneration,
       lastSequence: this.lastSequence,
     })) return
-    this.lastSequence = event.seq
-    this.onSnapshot(event, receivedAt)
+    // seq는 측정 상태와 무관하게 run 전체에서 단조 증가로 추적한다.
+    this.lastSequence = snapshot.seq
+    if (
+      this.state !== 'running' ||
+      this.measurementStartUptimeMs === null ||
+      !isJumpRopeUint32After(snapshot.observed_ms, this.measurementStartUptimeMs)
+    ) return
+    this.onSnapshot(snapshot, Date.now())
+  }
+
+  private isCurrentRunEnvelope(
+    message: Pick<JumpRopeGatewayMessage, 'boot_id' | 'run_id' | 'generation'> & {
+      slot?: unknown
+      profile_handle?: unknown
+    },
+  ) {
+    return message.boot_id === this.bootId &&
+      message.run_id === this.runId &&
+      message.generation === this.runGeneration &&
+      message.slot === JUMP_ROPE_PROFILE.slot &&
+      message.profile_handle === JUMP_ROPE_PROFILE.handle
+  }
+
+  private enterReconnecting(deviceState: 'connecting' | 'disconnected') {
+    if (this.closing || this.state === 'idle' || this.state === 'disconnecting') return
+    this.reconnectEpoch += 1
+    const measurementWasActive = this.state === 'starting' ||
+      this.state === 'running' ||
+      this.state === 'finishing' ||
+      this.deviceSessionStarted ||
+      this.measurement !== null ||
+      this.activeConfig !== null
+    if (measurementWasActive) {
+      this.reconnectInterruptionMessage = 'JR203 연결이 끊겨 진행 중이던 측정이 중단되었습니다.'
+      if (this.activeConfig) this.interruptedConfig = { ...this.activeConfig }
+    }
+    this.measurementLifecycle.invalidate()
+    this.measurementStartUptimeMs = null
+    this.measurement = null
+    this.activeConfig = null
+    this.deviceSessionStarted = false
+    this.notify(
+      'reconnecting',
+      deviceState === 'connecting'
+        ? 'JR203에 자동으로 다시 연결하는 중입니다.'
+        : 'JR203 연결이 끊겨 자동 재연결을 기다립니다.',
+      this.reconnectInterruptionMessage,
+    )
+  }
+
+  private isSameConnectedDevice(ready: JumpRopeDeviceReadyEvent) {
+    const currentDevice = this.connection?.device
+    return currentDevice !== undefined &&
+      this.isCurrentRunEnvelope(ready) &&
+      ready.identity_verified &&
+      ready.address_type === currentDevice.address_type &&
+      ready.address.toLowerCase() === currentDevice.address.toLowerCase()
+  }
+
+  private completeReconnection(ready: JumpRopeDeviceReadyEvent) {
+    const epoch = this.reconnectEpoch
+    if (this.reconnectRecoveryPromise && this.reconnectRecoveryEpoch === epoch) {
+      return this.reconnectRecoveryPromise
+    }
+    const previousRecovery = this.reconnectRecoveryPromise
+    const promise = (async () => {
+      if (previousRecovery) {
+        try { await previousRecovery } catch { }
+      }
+      await this.performReconnectionRecovery(ready, epoch)
+    })().finally(() => {
+      if (this.reconnectRecoveryPromise === promise) {
+        this.reconnectRecoveryPromise = null
+        this.reconnectRecoveryEpoch = -1
+      }
+    })
+    this.reconnectRecoveryPromise = promise
+    this.reconnectRecoveryEpoch = epoch
+    return promise
+  }
+
+  private async performReconnectionRecovery(ready: JumpRopeDeviceReadyEvent, epoch: number) {
+    const connection = this.connection
+    if (!connection || !this.isCurrentReconnectRecovery(ready, epoch)) return
+    this.connection = { ...connection, device: ready }
+    const configToStop = this.interruptedConfig
+    if (configToStop) {
+      try {
+        await this.sendControl('session_stop', { mode: configToStop.mode, target: configToStop.target })
+      } catch (error) {
+        if (this.isCurrentReconnectRecovery(ready, epoch)) {
+          const failure = classifyConnectionFailure(error)
+          this.notify('error', '재연결 후 측정 정리 실패', failure.message)
+        }
+        return
+      }
+    }
+    if (!this.isCurrentReconnectRecovery(ready, epoch)) return
+    await this.settleInvalidatedMeasurementCommands()
+    if (!this.isCurrentReconnectRecovery(ready, epoch)) return
+    this.measurementLifecycle.invalidate()
+    this.measurementStartUptimeMs = null
+    this.measurement = null
+    this.activeConfig = null
+    this.deviceSessionStarted = false
+    const statusText = this.reconnectInterruptionMessage
+      ? 'JR203 재연결됨 · 이전 측정 중단 · 다음 시작 신호 대기'
+      : 'JR203 재연결됨 · 시작 신호 대기'
+    this.reconnectInterruptionMessage = null
+    this.interruptedConfig = null
+    this.notify('connected', statusText, null)
+  }
+
+  private isCurrentReconnectRecovery(ready: JumpRopeDeviceReadyEvent, epoch: number) {
+    return this.connection !== null &&
+      this.state === 'reconnecting' &&
+      this.reconnectEpoch === epoch &&
+      this.isSameConnectedDevice(ready)
+  }
+
+  private async settleInvalidatedMeasurementCommands() {
+    const startPromise = this.startMeasurementPromise
+    const finishPromise = this.finishMeasurementPromise
+    if (startPromise) {
+      try { await startPromise } catch { }
+    }
+    if (finishPromise) {
+      try { await finishPromise } catch { }
+    }
   }
 
   private sendRequest(
@@ -941,8 +1191,9 @@ export class WebSerialJumpRopeClient {
   private async exchangePing() {
     if (
       this.lifecycle.isDisposed() ||
-      (this.state !== 'configuring' && this.state !== 'running') ||
+      this.closing ||
       this.pingBusy ||
+      !this.writer ||
       !this.runId
     ) return
     this.pingBusy = true
@@ -964,7 +1215,7 @@ export class WebSerialJumpRopeClient {
       )
       if (
         this.pingAttempt === pingAttempt &&
-        (this.state === 'configuring' || this.state === 'running') &&
+        !this.closing &&
         this.runId === runId
       ) {
         this.missedPongs = 0
@@ -972,12 +1223,12 @@ export class WebSerialJumpRopeClient {
     } catch {
       if (
         this.pingAttempt === pingAttempt &&
-        (this.state === 'configuring' || this.state === 'running') &&
+        !this.closing &&
         this.runId === runId
       ) {
         this.missedPongs += 1
         if (this.missedPongs >= 3) {
-          await this.failSession('USB 게이트웨이가 연결 유지 신호에 응답하지 않습니다.')
+          await this.failTransport('USB 게이트웨이가 연결 유지 신호에 응답하지 않습니다.')
         }
       }
     } finally {
@@ -985,17 +1236,28 @@ export class WebSerialJumpRopeClient {
     }
   }
 
-  private async failSession(message: string) {
+  private failTransport(message: string) {
     if (
       this.lifecycle.isDisposed() ||
       this.closing ||
-      this.state === 'error' ||
-      this.state === 'stopping' ||
+      this.state === 'disconnecting' ||
       this.state === 'idle'
-    ) return
+    ) return Promise.resolve()
+    if (this.fatalTransportPromise) return this.fatalTransportPromise
+
+    const promise = this.performFatalTransportFailure(message).finally(() => {
+      if (this.fatalTransportPromise === promise) this.fatalTransportPromise = null
+    })
+    this.fatalTransportPromise = promise
+    return promise
+  }
+
+  private async performFatalTransportFailure(message: string) {
+    this.measurementLifecycle.invalidate()
+    this.measurementStartUptimeMs = null
     this.clearPingTimer()
     await this.closeTransport()
-    this.notify('error', 'USB 연결 오류', message, null)
+    this.notify('error', 'USB 연결 오류', message)
   }
 
   private closeTransport() {
@@ -1044,15 +1306,21 @@ export class WebSerialJumpRopeClient {
   }
 
   private resetRunState() {
+    this.measurementLifecycle.invalidate()
+    this.reconnectEpoch += 1
     this.bootId = ''
     this.gatewayId = ''
     this.runId = ''
     this.runGeneration = 0
     this.lastSequence = 0
-    this.run = null
+    this.connection = null
+    this.measurement = null
+    this.activeConfig = null
     this.deviceSessionStarted = false
+    this.measurementStartUptimeMs = null
+    this.reconnectInterruptionMessage = null
+    this.interruptedConfig = null
     this.bufferedDeviceReadyEvents = []
-    this.bufferedSnapshots = []
     this.missedPongs = 0
   }
 
@@ -1111,11 +1379,16 @@ export class WebSerialJumpRopeClient {
     state: WebSerialJumpRopeState,
     statusText: string,
     error: string | null,
-    run: WebSerialJumpRopeRun | null,
   ) {
     if (this.lifecycle.isDisposed()) return
     this.state = state
-    this.onStatus({ state, statusText, error, run })
+    this.onStatus({
+      state,
+      statusText,
+      error,
+      connection: this.connection,
+      measurement: this.measurement,
+    })
   }
 }
 
@@ -1128,7 +1401,8 @@ export function useWebSerialJumpRope(
     state: 'idle',
     statusText: 'USB 연결 대기',
     error: null,
-    run: null,
+    connection: null,
+    measurement: null,
   })
 
   useEffect(() => {
@@ -1145,8 +1419,13 @@ export function useWebSerialJumpRope(
     return clientRef.current
   }, [])
 
-  const start = useCallback((config: JumpRopeStartConfig) => getClient().start(config), [getClient])
-  const stop = useCallback(() => getClient().stop(), [getClient])
+  const connect = useCallback(() => getClient().connect(), [getClient])
+  const startMeasurement = useCallback(
+    (config: JumpRopeStartConfig) => getClient().startMeasurement(config),
+    [getClient],
+  )
+  const finishMeasurement = useCallback(() => getClient().finishMeasurement(), [getClient])
+  const disconnect = useCallback(() => getClient().disconnect(), [getClient])
 
   useEffect(() => {
     const client = getClient()
@@ -1154,5 +1433,5 @@ export function useWebSerialJumpRope(
     return () => { disposeOwnedResource(clientRef, client) }
   }, [getClient])
 
-  return { ...session, start, stop }
+  return { ...session, connect, startMeasurement, finishMeasurement, disconnect }
 }

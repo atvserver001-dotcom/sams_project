@@ -14,9 +14,12 @@ import {
   isExpectedJumpRopeAck,
   isExpectedJumpRopeGatewayIdentity,
   isJumpRopeEventForRun,
+  isJumpRopeUint32After,
   jumpRopeModeSetFields,
   normalizeJumpRopeTarget,
+  parseJumpRopeAckUptime,
   parseJumpRopeDeviceReady,
+  parseJumpRopeDeviceState,
   parseJumpRopeSnapshot,
 } from './jumpRopeSerial'
 
@@ -51,6 +54,7 @@ const snapshot = (): JumpRopeGatewayMessage => ({
   run_id: 'run-1',
   generation: 2,
   seq: 7,
+  observed_ms: 1_234,
   fresh: true,
   slot: 1,
   count: 42,
@@ -83,6 +87,7 @@ describe('jump-rope gateway protocol', () => {
       run_id: 'run-1',
       generation: 1,
       slot: 1,
+      profile_handle: 'jump-rope-slot-01',
       address: 'ec:67:0e:8b:da:97',
       address_type: 0,
       name: 'JR260-0923081',
@@ -90,6 +95,24 @@ describe('jump-rope gateway protocol', () => {
     })
     expect(event?.address_type).toBe(0)
     expect(parseJumpRopeDeviceReady({ ...event, address_type: 4 } as JumpRopeGatewayMessage)).toBeNull()
+    expect(parseJumpRopeDeviceReady({ ...event, profile_handle: 'other-profile' } as JumpRopeGatewayMessage)).toBeNull()
+  })
+
+  it('accepts only reconnect-relevant device_state envelopes for the JR203 profile', () => {
+    const deviceState: JumpRopeGatewayMessage = {
+      v: 1,
+      kind: 'device_state',
+      boot_id: 'boot-1',
+      run_id: 'run-1',
+      generation: 2,
+      slot: 1,
+      profile_handle: 'jump-rope-slot-01',
+      state: 'disconnected',
+    }
+    expect(parseJumpRopeDeviceState(deviceState)?.state).toBe('disconnected')
+    expect(parseJumpRopeDeviceState({ ...deviceState, state: 'connecting' })?.state).toBe('connecting')
+    expect(parseJumpRopeDeviceState({ ...deviceState, state: 'link_established' })).toBeNull()
+    expect(parseJumpRopeDeviceState({ ...deviceState, profile_handle: 'other-profile' })).toBeNull()
   })
 
   it('binds ACKs to the expected boot, run, and generation', () => {
@@ -118,6 +141,8 @@ describe('jump-rope gateway protocol', () => {
     ['battery_percent', 101],
     ['rssi_dbm', 1],
     ['seq', 0],
+    ['observed_ms', -1],
+    ['observed_ms', 0x1_0000_0000],
   ])('rejects an invalid %s snapshot field', (field, value) => {
     expect(parseJumpRopeSnapshot({ ...snapshot(), [field]: value })).toBeNull()
   })
@@ -137,6 +162,19 @@ describe('jump-rope gateway protocol', () => {
     expect(isJumpRopeEventForRun(event, { ...run, lastSequence: 7 })).toBe(false)
     expect(isJumpRopeEventForRun(event, { ...run, runId: 'run-other' })).toBe(false)
     expect(isJumpRopeEventForRun(event, { ...run, generation: 3 })).toBe(false)
+  })
+
+  it('validates ACK uptime and compares uint32 timestamps across millis wrap', () => {
+    const ack = { v: 1, kind: 'ack', uptime_ms: 0xFFFF_FFF0 }
+    expect(parseJumpRopeAckUptime(ack)).toBe(0xFFFF_FFF0)
+    expect(parseJumpRopeAckUptime({ ...ack, uptime_ms: -1 })).toBeNull()
+    expect(parseJumpRopeAckUptime({ ...ack, uptime_ms: 0x1_0000_0000 })).toBeNull()
+
+    expect(isJumpRopeUint32After(100, 100)).toBe(false)
+    expect(isJumpRopeUint32After(101, 100)).toBe(true)
+    expect(isJumpRopeUint32After(99, 100)).toBe(false)
+    expect(isJumpRopeUint32After(0x10, 0xFFFF_FFF0)).toBe(true)
+    expect(isJumpRopeUint32After(0xFFFF_FF00, 0x10)).toBe(false)
   })
 })
 

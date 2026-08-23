@@ -5,6 +5,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import JumpRopeTestBoard, {
   JumpRopeSnapshotView,
 } from '@/components/jump-rope/JumpRopeTestBoard'
+import {
+  isJumpRopeConnectionActionBusy,
+  isJumpRopeConnectionContextLocked,
+  isJumpRopeMeasurementConfigLocked,
+  shouldApplyJumpRopeMeasurementCompletion,
+  shouldClearJumpRopeMeasurementUi,
+} from '@/components/jump-rope/jumpRopeUiState'
 import { useWebSerialJumpRope } from '@/components/jump-rope/useWebSerialJumpRope'
 import {
   JUMP_ROPE_MODE_OPTIONS,
@@ -27,8 +34,11 @@ interface CohortSelection {
   classNo: number
 }
 
-interface MeasurementSnapshot extends CohortSelection {
+interface ConnectionCohortSnapshot extends CohortSelection {
   students: StudentRow[]
+}
+
+interface MeasurementConfigSnapshot {
   mode: JumpRopeMode
   target: number
 }
@@ -53,9 +63,11 @@ export default function DeviceTestPage() {
   const [pageError, setPageError] = useState<string | null>(null)
   const [ropeMode, setRopeMode] = useState<JumpRopeMode>(0)
   const [target, setTarget] = useState(0)
-  const [measurementSnapshot, setMeasurementSnapshot] = useState<MeasurementSnapshot | null>(null)
+  const [connectionCohortSnapshot, setConnectionCohortSnapshot] = useState<ConnectionCohortSnapshot | null>(null)
+  const [measurementConfigSnapshot, setMeasurementConfigSnapshot] = useState<MeasurementConfigSnapshot | null>(null)
   const [snapshotsBySlot, setSnapshotsBySlot] = useState<Record<number, JumpRopeSnapshotView>>({})
   const fetchGenerationRef = useRef(0)
+  const measurementRequestGenerationRef = useRef(0)
 
   const selectedCohort = useMemo<CohortSelection>(() => ({ year, grade, classNo }), [year, grade, classNo])
   const selectedCohortKey = useMemo(() => selectionKeyOf(selectedCohort), [selectedCohort])
@@ -69,12 +81,15 @@ export default function DeviceTestPage() {
   }, [])
   const serialSession = useWebSerialJumpRope(handleSnapshot)
 
-  const isConnectionBusy = serialSession.state === 'connecting' ||
+  const isConnecting = serialSession.state === 'connecting' ||
     serialSession.state === 'handshaking' ||
-    serialSession.state === 'configuring' ||
-    serialSession.state === 'stopping'
+    serialSession.state === 'configuring'
+  const isDisconnecting = serialSession.state === 'disconnecting'
+  const hasConnection = serialSession.connection !== null
   const isMeasuring = serialSession.state === 'running'
-  const lockConfiguration = isConnectionBusy || isMeasuring
+  const connectionActionBusy = isJumpRopeConnectionActionBusy(serialSession.state)
+  const lockConnectionContext = isJumpRopeConnectionContextLocked(serialSession.state, hasConnection)
+  const lockMeasurementConfig = isJumpRopeMeasurementConfigLocked(serialSession.state, hasConnection)
 
   useEffect(() => {
     let cancelled = false
@@ -137,9 +152,21 @@ export default function DeviceTestPage() {
     return () => controller.abort()
   }, [selectedCohort, selectedCohortKey])
 
+  useEffect(() => {
+    const hasActiveConnection = serialSession.connection !== null
+    if (shouldClearJumpRopeMeasurementUi(serialSession.state, hasActiveConnection)) {
+      measurementRequestGenerationRef.current += 1
+      if (serialSession.state === 'error' && !hasActiveConnection) {
+        setConnectionCohortSnapshot(null)
+      }
+      setMeasurementConfigSnapshot(null)
+      setSnapshotsBySlot({})
+    }
+  }, [serialSession.connection, serialSession.state])
+
   const clearFinishedMeasurement = () => {
-    if (lockConfiguration) return
-    setMeasurementSnapshot(null)
+    if (lockMeasurementConfig) return
+    setMeasurementConfigSnapshot(null)
     setSnapshotsBySlot({})
   }
 
@@ -165,40 +192,70 @@ export default function DeviceTestPage() {
     setTarget(option.defaultTarget)
   }
 
-  const handleStart = () => {
-    if (lockConfiguration) return
+  const changeTarget = (nextTarget: number) => {
+    clearFinishedMeasurement()
+    setTarget(nextTarget)
+  }
+
+  const handleConnect = () => {
+    if (lockConnectionContext) return
     setPageError(null)
+    measurementRequestGenerationRef.current += 1
     if (studentsLoading || loadedSelectionKey !== selectedCohortKey) {
       setPageError('선택한 학급의 학생 정보를 불러오는 중입니다. 잠시 후 다시 시도해 주세요.')
       return
     }
 
-    const normalizedTarget = normalizeJumpRopeTarget(ropeMode, target)
-    const snapshot: MeasurementSnapshot = {
+    const snapshot: ConnectionCohortSnapshot = {
       ...selectedCohort,
       students: students.map((student) => ({ ...student })),
-      mode: ropeMode,
-      target: normalizedTarget,
     }
-    setTarget(normalizedTarget)
-    setMeasurementSnapshot(snapshot)
+    setConnectionCohortSnapshot(snapshot)
+    setMeasurementConfigSnapshot(null)
     setSnapshotsBySlot({})
 
-    // Web Serial 포트 선택의 클릭 권한을 보존하기 위해 현재 클릭 핸들러에서 즉시 시작한다.
-    const startPromise = serialSession.start({ mode: ropeMode, target: normalizedTarget })
-    void startPromise.then((run) => {
-      if (!run) setMeasurementSnapshot(null)
+    // Web Serial 포트 선택의 클릭 권한을 보존하기 위해 현재 클릭 핸들러에서 즉시 연결한다.
+    const connectPromise = serialSession.connect()
+    void connectPromise.then((connection) => {
+      if (!connection) setConnectionCohortSnapshot(null)
     })
   }
 
-  const handleStop = () => {
-    void serialSession.stop()
+  const handleDisconnect = () => {
+    measurementRequestGenerationRef.current += 1
+    void serialSession.disconnect().then(() => {
+      setConnectionCohortSnapshot(null)
+      setMeasurementConfigSnapshot(null)
+      setSnapshotsBySlot({})
+    })
   }
 
-  const displaySnapshot = measurementSnapshot
-  const displayStudents = displaySnapshot?.students ?? students
-  const displayMode = displaySnapshot?.mode ?? ropeMode
-  const displayTarget = displaySnapshot?.target ?? normalizeJumpRopeTarget(ropeMode, target)
+  const handleStartMeasurement = () => {
+    if (serialSession.state !== 'connected') return
+    const normalizedTarget = normalizeJumpRopeTarget(ropeMode, target)
+    const config = { mode: ropeMode, target: normalizedTarget }
+    const requestGeneration = measurementRequestGenerationRef.current + 1
+    measurementRequestGenerationRef.current = requestGeneration
+    setTarget(normalizedTarget)
+    setMeasurementConfigSnapshot(config)
+    setSnapshotsBySlot({})
+    void serialSession.startMeasurement(config).then((measurement) => {
+      if (!shouldApplyJumpRopeMeasurementCompletion(
+        requestGeneration,
+        measurementRequestGenerationRef.current,
+      )) return
+      if (!measurement) setMeasurementConfigSnapshot(null)
+    })
+  }
+
+  const handleFinishMeasurement = () => {
+    measurementRequestGenerationRef.current += 1
+    void serialSession.finishMeasurement()
+  }
+
+  const displayStudents = connectionCohortSnapshot?.students ?? students
+  const displayMode = measurementConfigSnapshot?.mode ?? ropeMode
+  const displayTarget = measurementConfigSnapshot?.target ?? normalizeJumpRopeTarget(ropeMode, target)
 
   return (
     <div className="space-y-6 text-white">
@@ -213,7 +270,7 @@ export default function DeviceTestPage() {
           role="tab"
           aria-selected={deviceTestMode === 'jump-rope'}
           onClick={() => setDeviceTestMode('jump-rope')}
-          disabled={lockConfiguration}
+          disabled={lockConnectionContext}
           className={`px-6 py-2.5 text-sm font-bold transition-colors ${deviceTestMode === 'jump-rope' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'} disabled:cursor-not-allowed disabled:opacity-60`}
         >
           줄넘기
@@ -223,7 +280,7 @@ export default function DeviceTestPage() {
           role="tab"
           aria-selected={deviceTestMode === 'body-composition'}
           onClick={() => setDeviceTestMode('body-composition')}
-          disabled={lockConfiguration}
+          disabled={lockConnectionContext}
           className={`px-6 py-2.5 text-sm font-bold transition-colors ${deviceTestMode === 'body-composition' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'} disabled:cursor-not-allowed disabled:opacity-60`}
         >
           체성분
@@ -250,7 +307,7 @@ export default function DeviceTestPage() {
                   <select
                     value={year}
                     onChange={(event) => changeYear(Number(event.target.value))}
-                    disabled={lockConfiguration}
+                    disabled={lockConnectionContext}
                     className="block h-12 w-36 rounded-lg border-2 border-indigo-300 bg-white px-4 text-center text-lg font-semibold text-gray-900 shadow outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-300 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {Array.from({ length: 7 }, (_, index) => computeDefaultYear() + 1 - index).map((item) => (
@@ -264,7 +321,7 @@ export default function DeviceTestPage() {
                   <select
                     value={grade}
                     onChange={(event) => changeGrade(Number(event.target.value))}
-                    disabled={lockConfiguration}
+                    disabled={lockConnectionContext}
                     className="block h-12 w-36 rounded-lg border-2 border-indigo-300 bg-white px-4 text-center text-lg font-semibold text-gray-900 shadow outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-300 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {Array.from({ length: schoolType === 1 ? 6 : 3 }, (_, index) => index + 1).map((item) => (
@@ -278,7 +335,7 @@ export default function DeviceTestPage() {
                   <select
                     value={classNo}
                     onChange={(event) => changeClassNo(Number(event.target.value))}
-                    disabled={lockConfiguration}
+                    disabled={lockConnectionContext}
                     className="block h-12 w-36 rounded-lg border-2 border-indigo-300 bg-white px-4 text-center text-lg font-semibold text-gray-900 shadow outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-300 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {Array.from({ length: 10 }, (_, index) => index + 1).map((item) => (
@@ -292,7 +349,7 @@ export default function DeviceTestPage() {
                   <select
                     value={ropeMode}
                     onChange={(event) => changeRopeMode(Number(event.target.value) as JumpRopeMode)}
-                    disabled={lockConfiguration}
+                    disabled={lockMeasurementConfig}
                     className="block h-12 w-44 rounded-lg border-2 border-indigo-300 bg-white px-4 text-center text-base font-semibold text-gray-900 shadow outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-300 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {JUMP_ROPE_MODE_OPTIONS.map((option) => (
@@ -311,9 +368,9 @@ export default function DeviceTestPage() {
                         max={selectedModeOption.maxTarget}
                         step={selectedModeOption.stepTarget}
                         value={target}
-                        onChange={(event) => setTarget(Number(event.target.value))}
-                        onBlur={() => setTarget(normalizeJumpRopeTarget(ropeMode, target))}
-                        disabled={lockConfiguration}
+                        onChange={(event) => changeTarget(Number(event.target.value))}
+                        onBlur={() => changeTarget(normalizeJumpRopeTarget(ropeMode, target))}
+                        disabled={lockMeasurementConfig}
                         className="block h-12 w-40 rounded-lg border-2 border-indigo-300 bg-white px-4 pr-11 text-center text-lg font-semibold text-gray-900 shadow outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-300 disabled:cursor-not-allowed disabled:opacity-60"
                       />
                       <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm font-bold text-gray-500">
@@ -334,32 +391,51 @@ export default function DeviceTestPage() {
                 ) : null}
               </div>
 
-              <button
-                type="button"
-                onClick={isMeasuring ? handleStop : handleStart}
-                disabled={isConnectionBusy || studentsLoading || loadedSelectionKey !== selectedCohortKey}
-                className={`relative flex min-h-14 items-center justify-center gap-3 rounded-xl px-8 py-4 text-lg font-bold text-white shadow-xl transition-all duration-300 active:scale-95 ${isMeasuring ? 'bg-gradient-to-br from-rose-600 to-red-700 hover:-translate-y-0.5 hover:shadow-rose-500/30' : 'bg-gradient-to-br from-indigo-600 to-violet-700 hover:-translate-y-0.5 hover:shadow-indigo-500/30'} disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none`}
-              >
-                {isConnectionBusy ? (
-                  <>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={hasConnection ? handleDisconnect : handleConnect}
+                  disabled={connectionActionBusy || (!hasConnection && (
+                    studentsLoading || loadedSelectionKey !== selectedCohortKey
+                  ))}
+                  className={`flex min-h-12 items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-bold text-white shadow-lg transition-all active:scale-95 ${hasConnection ? 'bg-slate-700 hover:bg-slate-800' : 'bg-indigo-600 hover:bg-indigo-700'} disabled:cursor-not-allowed disabled:opacity-60`}
+                >
+                  {(isConnecting || isDisconnecting) && (
                     <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
-                    {serialSession.state === 'stopping' ? '종료 중...' : '연결 준비 중...'}
-                  </>
-                ) : isMeasuring ? (
-                  <>
-                    <span className="h-3 w-3 rounded-sm bg-white" />
-                    측정 중지
-                  </>
-                ) : (
-                  <>
-                    <span className="relative flex h-3 w-3">
-                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-300 opacity-75" />
-                      <span className="relative inline-flex h-3 w-3 rounded-full bg-emerald-400" />
-                    </span>
-                    측정 시작
-                  </>
-                )}
-              </button>
+                  )}
+                  {isConnecting
+                    ? '연결 중...'
+                    : isDisconnecting
+                      ? '해제 중...'
+                      : hasConnection
+                        ? '연결 해제'
+                        : '기기 연결'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleStartMeasurement}
+                  disabled={serialSession.state !== 'connected'}
+                  className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-sm font-bold text-white shadow-lg transition-all hover:bg-emerald-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {serialSession.state === 'starting' && (
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                  )}
+                  시작 신호
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleFinishMeasurement}
+                  disabled={!isMeasuring}
+                  className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-rose-600 px-5 py-3 text-sm font-bold text-white shadow-lg transition-all hover:bg-rose-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {serialSession.state === 'finishing' && (
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                  )}
+                  끝 신호
+                </button>
+              </div>
             </div>
           </section>
 

@@ -11,6 +11,7 @@ import {
   getJumpRopeSignalState,
 } from '../../lib/jumpRopeSerial'
 import { WebSerialJumpRopeState } from './useWebSerialJumpRope'
+import { getJumpRopeSlotLifecycleLabel } from './jumpRopeUiState'
 
 interface JumpRopeBoardStudent {
   id: string
@@ -40,8 +41,12 @@ const connectionPresentation: Record<WebSerialJumpRopeState, { label: string; cl
   connecting: { label: '포트 탐색 중', classes: 'bg-blue-100 text-blue-700' },
   handshaking: { label: '핸드셰이크 중', classes: 'bg-amber-100 text-amber-800' },
   configuring: { label: 'JR203 준비 중', classes: 'bg-amber-100 text-amber-800' },
+  connected: { label: '기기 연결됨', classes: 'bg-blue-100 text-blue-800' },
+  reconnecting: { label: 'JR203 재연결 중', classes: 'bg-amber-100 text-amber-800' },
+  starting: { label: '시작 신호 전송 중', classes: 'bg-amber-100 text-amber-800' },
   running: { label: '측정 중', classes: 'bg-emerald-100 text-emerald-800' },
-  stopping: { label: '종료 중', classes: 'bg-gray-100 text-gray-700' },
+  finishing: { label: '끝 신호 전송 중', classes: 'bg-amber-100 text-amber-800' },
+  disconnecting: { label: '연결 해제 중', classes: 'bg-gray-100 text-gray-700' },
   error: { label: '연결 오류', classes: 'bg-rose-100 text-rose-700' },
 }
 
@@ -133,7 +138,7 @@ export default function JumpRopeTestBoard({
         </div>
         <div className="flex flex-wrap items-center gap-2" aria-live="polite">
           <span className={`inline-flex items-center rounded-full px-3 py-1.5 text-xs font-bold ${connection.classes}`}>
-            {connectionState === 'running' && (
+            {(connectionState === 'connected' || connectionState === 'running') && (
               <span className="mr-2 h-2 w-2 rounded-full bg-emerald-500 motion-safe:animate-pulse" />
             )}
             {connection.label}
@@ -158,11 +163,14 @@ export default function JumpRopeTestBoard({
           const signal = signalPresentation[signalState]
           const modePresentation = getJumpRopeModePresentation(mode, event?.mode)
           const isCurrentGatewaySlot = slot === JUMP_ROPE_PROFILE.slot
-          const signalLabel = event
-            ? signal.label
-            : connectionState === 'running' && isCurrentGatewaySlot
-              ? '신호 대기'
-              : '미연결'
+          const lifecycleLabel = getJumpRopeSlotLifecycleLabel(connectionState)
+          const signalLabel = isCurrentGatewaySlot && lifecycleLabel
+            ? lifecycleLabel
+            : event
+              ? signal.label
+              : connectionState === 'running' && isCurrentGatewaySlot
+                ? '신호 대기'
+                : '미연결'
 
           return (
             <article

@@ -97,6 +97,7 @@ export interface JumpRopeGatewayMessage {
   reason?: string
   generation?: number
   seq?: number
+  uptime_ms?: number
   [key: string]: unknown
 }
 
@@ -130,7 +131,18 @@ export interface JumpRopeDeviceReadyEvent extends JumpRopeGatewayMessage, JumpRo
   run_id: string
   generation: number
   slot: 1
+  profile_handle: typeof JUMP_ROPE_PROFILE.handle
   identity_verified: boolean
+}
+
+export interface JumpRopeDeviceStateEvent extends JumpRopeGatewayMessage {
+  kind: 'device_state'
+  boot_id: string
+  run_id: string
+  generation: number
+  slot: 1
+  profile_handle: typeof JUMP_ROPE_PROFILE.handle
+  state: 'connecting' | 'disconnected'
 }
 
 export interface JumpRopeSnapshotEvent extends JumpRopeGatewayMessage {
@@ -140,6 +152,7 @@ export interface JumpRopeSnapshotEvent extends JumpRopeGatewayMessage {
   run_id: string
   generation: number
   seq: number
+  observed_ms: number
   fresh: true
   slot: number
   count: number
@@ -163,6 +176,16 @@ const isRecord = (value: unknown): value is Record<string, unknown> => (
 const isFiniteInteger = (value: unknown): value is number => (
   typeof value === 'number' && Number.isFinite(value) && Number.isInteger(value)
 )
+
+export const isJumpRopeUint32 = (value: unknown): value is number => (
+  isFiniteInteger(value) && value >= 0 && value <= 0xFFFF_FFFF
+)
+
+export const isJumpRopeUint32After = (value: number, fence: number) => {
+  if (!isJumpRopeUint32(value) || !isJumpRopeUint32(fence)) return false
+  const distance = (value - fence) >>> 0
+  return distance > 0 && distance < 0x8000_0000
+}
 
 const isNonEmptyString = (value: unknown): value is string => (
   typeof value === 'string' && value.trim().length > 0
@@ -293,6 +316,10 @@ export function isExpectedJumpRopeAck(
   return true
 }
 
+export function parseJumpRopeAckUptime(message: JumpRopeGatewayMessage) {
+  return isJumpRopeUint32(message.uptime_ms) ? message.uptime_ms : null
+}
+
 export function parseJumpRopeDeviceReady(
   message: JumpRopeGatewayMessage,
 ): JumpRopeDeviceReadyEvent | null {
@@ -304,6 +331,7 @@ export function parseJumpRopeDeviceReady(
     !isFiniteInteger(message.generation) ||
     message.generation <= 0 ||
     message.slot !== 1 ||
+    message.profile_handle !== JUMP_ROPE_PROFILE.handle ||
     typeof message.identity_verified !== 'boolean' ||
     !isNonEmptyString(message.address) ||
     !isFiniteInteger(message.address_type) ||
@@ -314,6 +342,25 @@ export function parseJumpRopeDeviceReady(
     return null
   }
   return message as unknown as JumpRopeDeviceReadyEvent
+}
+
+export function parseJumpRopeDeviceState(
+  message: JumpRopeGatewayMessage,
+): JumpRopeDeviceStateEvent | null {
+  if (
+    message.v !== 1 ||
+    message.kind !== 'device_state' ||
+    !isNonEmptyString(message.boot_id) ||
+    !isNonEmptyString(message.run_id) ||
+    !isFiniteInteger(message.generation) ||
+    message.generation <= 0 ||
+    message.slot !== JUMP_ROPE_PROFILE.slot ||
+    message.profile_handle !== JUMP_ROPE_PROFILE.handle ||
+    (message.state !== 'connecting' && message.state !== 'disconnected')
+  ) {
+    return null
+  }
+  return message as unknown as JumpRopeDeviceStateEvent
 }
 
 export function parseJumpRopeSnapshot(
@@ -328,6 +375,7 @@ export function parseJumpRopeSnapshot(
     message.generation <= 0 ||
     !isFiniteInteger(message.seq) ||
     message.seq <= 0 ||
+    !isJumpRopeUint32(message.observed_ms) ||
     message.fresh !== true ||
     !isFiniteInteger(message.slot) ||
     message.slot < 1 ||

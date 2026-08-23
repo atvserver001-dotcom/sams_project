@@ -129,6 +129,8 @@ export default function SchoolLayout({ children }: { children: React.ReactNode }
                 <div className="ml-2 flex min-w-0 flex-1 items-center gap-4 overflow-x-auto whitespace-nowrap text-sm font-medium [scrollbar-width:none] md:gap-6 [&::-webkit-scrollbar]:hidden">
                   <Link href="/school/students" className={menuLinkClassName}>학생 정보입력</Link>
 
+                  <Link href="/school/device-test" className={menuLinkClassName}>줄넘기 / 체성분 테스트</Link>
+
                   {!loadingContents && menuContents.map((c, idx) => {
                     const name = c.name.replace(/\s/g, '')
                     if (!name || name === '-' || name === ' - ') return null
